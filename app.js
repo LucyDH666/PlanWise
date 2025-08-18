@@ -2941,6 +2941,9 @@ function logEventChange(event, action, details = {}) {
       state.auditLog = state.auditLog.slice(-100);
     }
     
+    // Save state after audit log changes
+    saveState();
+    
     console.log("Audit log:", logEntry);
   } catch (error) {
     console.warn("Error logging event change:", error);
