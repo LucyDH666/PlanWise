@@ -28,6 +28,7 @@
       <button class="nav-btn" data-route="planner" data-requires-permission="view_planner">Planner</button>
       <button class="nav-btn" data-route="installations" data-requires-permission="view_installations">Installaties & Onderhoud</button>
       <button class="nav-btn" data-route="settings" data-requires-permission="edit_settings">Instellingen</button>
+      <button class="nav-btn" data-route="superadmin" data-requires-permission="superadmin" style="background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.3);">🔧 Super Admin</button>
       <div id="currentUserRole" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
         <!-- Role indicator will be populated by JavaScript -->
       </div>
@@ -36,8 +37,18 @@
           <option value="">Rol wisselen...</option>
         </select>
       </div>
-      <button class="nav-btn" onclick="resetApp()" style="background: rgba(255,165,0,0.1); border-color: rgba(255,165,0,0.3);">🔄 Reset</button>
-      <button class="nav-btn" onclick="logout()" style="background: rgba(255,0,0,0.1); border-color: rgba(255,0,0,0.3);">🚪 Uitloggen</button>
+      
+      <!-- Account Dropdown -->
+      <div class="account-dropdown" style="margin-left: auto; position: relative;">
+        <button class="nav-btn" onclick="toggleAccountDropdown()" style="background: rgba(var(--brand-1), 0.1); border-color: rgba(var(--brand-1), 0.3);">👤 Account</button>
+        <div id="accountDropdown" class="dropdown-menu" style="display: none; position: absolute; right: 0; top: 100%; background: rgb(var(--bg-1)); border: 1px solid rgba(var(--text-2), 0.2); border-radius: 8px; padding: 8px 0; min-width: 200px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+          <div class="dropdown-item" onclick="showSwitchTenantModal()">🔄 Switch Tenant</div>
+          <div id="superAdminOption" class="dropdown-item" onclick="switchToSuperAdmin()" style="display: none;">🔧 Naar Super Admin</div>
+          <div class="dropdown-separator"></div>
+          <div class="dropdown-item" onclick="resetApp()">🔄 Reset App</div>
+          <div class="dropdown-item" onclick="logout()">🚪 Uitloggen</div>
+        </div>
+      </div>
     </nav>
   </header>
 
@@ -287,7 +298,7 @@
     </section>
 
     <!-- ROUTE: Super Admin Dashboard -->
-    <section id="route-superadmin" class="route">
+    <section id="route-superadmin" class="route" data-requires-permission="superadmin">
       <div class="row-between">
         <h2>🔧 Super Admin Dashboard</h2>
         <div class="right">
@@ -346,7 +357,7 @@
     </section>
 
     <!-- ROUTE: Platform Analytics -->
-    <section id="route-platform-analytics" class="route">
+    <section id="route-platform-analytics" class="route" data-requires-permission="superadmin">
       <div class="row-between">
         <h2>📊 Platform Analytics</h2>
         <div class="right">
@@ -388,7 +399,7 @@
     </section>
 
     <!-- ROUTE: Platform Billing -->
-    <section id="route-platform-billing" class="route">
+    <section id="route-platform-billing" class="route" data-requires-permission="superadmin">
       <div class="row-between">
         <h2>💰 Platform Billing</h2>
         <div class="right">
@@ -1008,6 +1019,36 @@
     </form>
   </dialog>
 
+  <!-- Switch Tenant Modal -->
+  <dialog id="switchTenantModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Switch naar andere organisatie</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <div class="field">
+            <label>Selecteer organisatie</label>
+            <select id="switchTenantSelect" required>
+              <option value="">Kies een organisatie...</option>
+            </select>
+          </div>
+          <div class="field">
+            <div id="switchTenantInfo" style="padding: 12px; background: rgba(var(--bg-2), 0.5); border-radius: 8px; margin-top: 8px; display: none;">
+              <strong>Organisatie info:</strong>
+              <div id="switchTenantDetails"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Annuleren</button>
+        <button class="btn primary" onclick="performTenantSwitch()" value="ok">Ga naar organisatie</button>
+      </footer>
+    </form>
+  </dialog>
+
   <!-- Create User Modal -->
   <dialog id="createUserModal" class="modal">
     <form method="dialog" class="modal-card">
@@ -1061,6 +1102,9 @@
     </form>
   </dialog>
 
+  <!-- Auth Service -->
+  <script src="services/auth.js?v=2025-08-14"></script>
+  
   <!-- API Adapter -->
   <script src="services/api.js?v=2025-08-14"></script>
   

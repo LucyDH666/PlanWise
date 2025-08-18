@@ -1,12 +1,11 @@
-/* PlanWise – v3.2
-   Fixes: Dashboard render timing + live updates + onderhoud-nav/route injectie
+/* PlanWise – v3.3
+   Auth v2: Centralized authentication state management
    Features: Planner, Dashboard (FullCalendar), Persistentie, Onderhoudsvoorstellen
 */
-/* -------------------- TENANT & AUTH MANAGEMENT -------------------- */
-let currentTenant = localStorage.getItem('planwise_current_tenant') || null;
-let currentUser = localStorage.getItem('planwise_current_user') || null;
-let isSuperAdmin = localStorage.getItem('planwise_super_admin') === 'true' || false;
-let currentUserRole = localStorage.getItem('planwise_current_user_role') || null;
+/* -------------------- GLOBAL STATE -------------------- */
+let currentAuth = null;
+let currentRoute = "dashboard";
+let state = {};
 
 // Super Admin credentials (in production, this should be env variables)
 const SUPER_ADMIN = {
@@ -76,17 +75,12 @@ const ROLE_PERMISSIONS = {
 };
 
 function getStorageKey() {
-  return currentTenant ? `planwise_${currentTenant}_v4` : "planwise_demo_v4";
+  return currentAuth?.orgSlug ? `planwise_${currentAuth.orgSlug}_v4` : "planwise_demo_v4";
 }
 
 // RBAC Permission Checking
 function hasPermission(permission) {
-  if (isSuperAdmin) return true;
-  
-  const userRole = currentUserRole || ROLES.VIEWER;
-  const rolePermissions = ROLE_PERMISSIONS[userRole]?.permissions || [];
-  
-  return rolePermissions.includes('*') || rolePermissions.includes(permission);
+  return Auth.hasPermission(permission);
 }
 
 function requirePermission(permission, fallbackAction = null) {
@@ -336,12 +330,6 @@ function roleSafeEditSettings(action, ...args) {
 function initializeRBAC() {
   console.log("Initializing RBAC system...");
   
-  // Set default role if not set
-  if (!currentUserRole && !isSuperAdmin) {
-    currentUserRole = ROLES.VIEWER;
-    localStorage.setItem('planwise_current_user_role', currentUserRole);
-  }
-  
   // Update UI for current role
   updateUIForRole();
   
@@ -350,7 +338,7 @@ function initializeRBAC() {
     addRoleSwitcher();
   }
   
-  console.log(`RBAC initialized for role: ${getCurrentUserRole()}`);
+  console.log(`RBAC initialized for role: ${currentAuth?.role || 'viewer'}`);
 }
 
 function addRoleSwitcher() {
@@ -389,7 +377,7 @@ function updateRoleIndicator() {
   const roleIndicator = document.getElementById('currentUserRole');
   if (!roleIndicator) return;
   
-  const role = currentUserRole || ROLES.VIEWER;
+  const role = currentAuth?.role || 'viewer';
   const roleInfo = ROLE_PERMISSIONS[role];
   
   if (roleInfo) {
@@ -464,8 +452,8 @@ function switchRole(newRole) {
 }
 
 function applyRoleBasedUI() {
-  const role = currentUserRole || ROLES.VIEWER;
-  const isViewer = role === ROLES.VIEWER;
+  const role = currentAuth?.role || 'viewer';
+  const isViewer = role === 'viewer';
   
   // Apply viewer mode class to body
   document.body.classList.toggle('viewer-mode', isViewer);
@@ -589,16 +577,22 @@ let calendar = null;     // FullCalendar instance
 let currentRoute = "new";
 
 document.addEventListener("DOMContentLoaded", function() {
-  // Register dialog polyfill for GitHub Pages compatibility
-  if (typeof dialogPolyfill !== 'undefined') {
-    const dialogs = document.querySelectorAll('dialog');
-    dialogs.forEach(dialog => {
-      dialogPolyfill.registerDialog(dialog);
-    });
-    console.log('Dialog polyfill registered for', dialogs.length, 'dialogs');
+  // Apply polyfills and close any stray dialogs
+  applyPolyfillsAndCloseStrayDialogs();
+  
+  // Get auth state
+  currentAuth = Auth.get();
+  
+  if (!currentAuth) {
+    showLoginModal();
+    return;
   }
   
-  setup();
+  // Initialize app for current auth
+  initAppFor(currentAuth);
+  
+  // Ensure calendar is loaded before binding event handlers
+  ensureCalendarLoaded();
 });
 
 // Register service worker for PWA functionality
@@ -614,20 +608,35 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-/* -------------------- SETUP -------------------- */
-function setup(){
-  console.log("Setup gestart...");
+/* -------------------- STARTUP & INITIALIZATION -------------------- */
 
-  // Always show login modal first
-  if (!currentTenant) {
-    // Hide all routes initially
-    const routes = document.querySelectorAll('.route');
-    routes.forEach(route => route.classList.remove('active'));
-    
-    showLoginModal();
-    return;
+// Apply polyfills and close any stray dialogs/overlays
+function applyPolyfillsAndCloseStrayDialogs() {
+  // Register dialog polyfill for GitHub Pages compatibility
+  if (typeof dialogPolyfill !== 'undefined') {
+    const dialogs = document.querySelectorAll('dialog');
+    dialogs.forEach(dialog => {
+      dialogPolyfill.registerDialog(dialog);
+    });
+    console.log('Dialog polyfill registered for', dialogs.length, 'dialogs');
   }
+  
+  // Close any 'hanging' dialogs/overlays
+  document.querySelectorAll('dialog[open]').forEach(d => { 
+    try { d.close(); } catch(_){} 
+  });
+  
+  // Remove any stray overlays/backdrops
+  const blockers = document.querySelectorAll('.modal-backdrop,.overlay,.fc-popover'); 
+  blockers.forEach(b => b.remove());
+}
 
+// Initialize app for specific auth state
+function initAppFor(auth) {
+  console.log("Initializing app for auth:", auth);
+  
+  currentAuth = auth;
+  
   // Initialize RBAC system
   initializeRBAC();
   
@@ -635,17 +644,26 @@ function setup(){
   updateRoleIndicator();
   setupRoleSwitcher();
   applyRoleBasedUI();
+  
+  // Setup account dropdown
+  setupAccountDropdown();
 
   // Router-knoppen
-  document.querySelectorAll(".nav-btn").forEach(btn=>{
-    btn.addEventListener("click", ()=> go(btn.dataset.route));
+  document.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!currentAuth) {
+        showLoginModal();
+        return;
+      }
+      go(btn.dataset.route);
+    });
   });
 
   // Inject onderhoud-knop in de nav (als ontbreekt)
   injectMaintenanceNav();
 
   // Form submit
-  const rf=document.getElementById("requestForm");
+  const rf = document.getElementById("requestForm");
   if(rf) rf.addEventListener("submit", onSubmitRequest);
 
   // Instellingen knoppen
@@ -659,8 +677,69 @@ function setup(){
   go("dashboard");
 }
 
+// Ensure calendar is loaded before binding event handlers
+function ensureCalendarLoaded() {
+  if (typeof FullCalendar !== 'undefined') {
+    console.log('FullCalendar already loaded');
+    return Promise.resolve();
+  }
+  
+  return new Promise((resolve) => {
+    const checkInterval = setInterval(() => {
+      if (typeof FullCalendar !== 'undefined') {
+        clearInterval(checkInterval);
+        console.log('FullCalendar loaded successfully');
+        resolve();
+      }
+    }, 100);
+    
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      clearInterval(checkInterval);
+      console.warn('FullCalendar loading timeout');
+      resolve();
+    }, 5000);
+  });
+}
+
+// Close account dropdown when clicking outside
+document.addEventListener('click', function(event) {
+  const dropdown = document.getElementById('accountDropdown');
+  const accountButton = document.querySelector('.account-dropdown button');
+  
+  if (dropdown && accountButton) {
+    if (!accountButton.contains(event.target) && !dropdown.contains(event.target)) {
+      dropdown.style.display = 'none';
+    }
+  }
+});
+
 /* -------------------- ROUTER -------------------- */
 function go(route){
+  // Check if user has permission for this route
+  if (!currentAuth) {
+    showLoginModal();
+    return;
+  }
+  
+  // Special handling for Super Admin routes
+  if (route === 'superadmin' || route === 'platform-analytics' || route === 'platform-billing') {
+    if (currentAuth.role !== 'superadmin') {
+      alert('Alleen Super Admins hebben toegang tot deze functie');
+      return;
+    }
+    
+    // If trying to access Super Admin from a tenant context, switch to platform mode
+    if (currentAuth.orgSlug !== 'PLANWISE_PLATFORM') {
+      if (confirm('Naar platformmodus gaan om Super Admin functies te gebruiken?')) {
+        if (Auth.becomeSuperAdmin()) {
+          location.reload();
+        }
+      }
+      return;
+    }
+  }
+  
   currentRoute = route;
   document.querySelectorAll(".route").forEach(s=>s.classList.remove("active"));
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
@@ -3389,28 +3468,11 @@ function parseDate(dateStr) {
 function showSuperAdminInterface() {
   console.log("Initializing Super Admin interface...");
   
-  // Hide regular navigation and show super admin nav
-  updateNavigationForSuperAdmin();
-  
   // Go to super admin dashboard
   go('superadmin');
   
   // Load all platform data
   loadPlatformData();
-}
-
-function updateNavigationForSuperAdmin() {
-  const nav = document.querySelector('.nav');
-  if (!nav) return;
-  
-  nav.innerHTML = `
-    <button class="nav-btn active" onclick="go('superadmin')">🔧 Super Admin</button>
-    <button class="nav-btn" onclick="go('platform-analytics')">📊 Analytics</button>
-    <button class="nav-btn" onclick="go('platform-billing')">💰 Billing</button>
-    <button class="nav-btn" onclick="showPlatformSettingsModal()">⚙️ Settings</button>
-    <button class="nav-btn" onclick="resetApp()" style="background: rgba(255,165,0,0.1); border-color: rgba(255,165,0,0.3);">🔄 Reset</button>
-    <button class="nav-btn" onclick="logout()" style="margin-left: auto; background: rgba(255,0,0,0.1); border-color: rgba(255,0,0,0.3);">🚪 Logout</button>
-  `;
 }
 
 function loadPlatformData() {
@@ -4718,40 +4780,17 @@ function handleLogin() {
   // Check for super admin login
   if (company === SUPER_ADMIN.company && username === SUPER_ADMIN.username && password === SUPER_ADMIN.password) {
     // Super Admin login
-    currentTenant = 'superadmin';
-    currentUser = 'superadmin';
-    isSuperAdmin = true;
-    currentUserRole = ROLES.SUPER_ADMIN;
-    
-    localStorage.setItem('planwise_current_tenant', currentTenant);
-    localStorage.setItem('planwise_current_user', currentUser);
-    localStorage.setItem('planwise_super_admin', 'true');
-    localStorage.setItem('planwise_current_user_role', currentUserRole);
-    
-    // Close modal and initialize app
-    $("#loginModal").close();
-    
-    // Initialize with super admin state
-    state = {
-      tenantInfo: { company: "PlanWise Platform", plan: "superadmin" },
-      superAdmin: true
-    };
-    
-    // Show super admin interface
-    showSuperAdminInterface();
-    
-    // Update RBAC UI
-    updateRoleIndicator();
-    setupRoleSwitcher();
-    applyRoleBasedUI();
-    
-    alert("Welkom Super Admin! Je hebt toegang tot alle platform functies.");
+    if (Auth.becomeSuperAdmin()) {
+      $("#loginModal").close();
+      location.reload();
+    } else {
+      alert("Fout bij inloggen als Super Admin");
+    }
     return;
   }
   
   // Regular tenant authentication
   const tenantKey = company.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const userKey = `${tenantKey}_${username}`;
   
   // Check if tenant exists
   const existingTenant = localStorage.getItem(`planwise_tenant_${tenantKey}`);
@@ -4768,26 +4807,19 @@ function handleLogin() {
     return;
   }
   
-  // Set current tenant and user
-  currentTenant = tenantKey;
-  currentUser = userKey;
-  isSuperAdmin = false;
+  // Set auth state
+  const authData = {
+    orgSlug: tenantKey,
+    role: user.role || 'viewer',
+    user: username
+  };
   
-  // Set user role
-  currentUserRole = user.role || ROLES.VIEWER;
-  
-  localStorage.setItem('planwise_current_tenant', currentTenant);
-  localStorage.setItem('planwise_current_user', currentUser);
-  localStorage.setItem('planwise_super_admin', 'false');
-  localStorage.setItem('planwise_current_user_role', currentUserRole);
-  
-  // Close modal and initialize app
-  $("#loginModal").close();
-  
-  // Update tenant info in state
-  const newState = loadState() || structuredClone(defaultState);
-  newState.tenantInfo = tenantData.info;
-  state = newState;
+  if (Auth.set(authData)) {
+    $("#loginModal").close();
+    location.reload();
+  } else {
+    alert("Fout bij inloggen");
+  }
   
   // Restart setup and go to dashboard
   setup();
@@ -4905,7 +4937,8 @@ function handleRegister() {
   alert(`Account aangemaakt! Welkom bij PlanWise, ${username}. Je rol is: ${ROLE_PERMISSIONS[role]?.name || 'Gebruiker'}.`);
 }
 
-function resetApp() {
+// Global reset function
+window.resetApp = function() {
   if (confirm("Weet je zeker dat je de app wilt resetten? Dit verwijdert alle lokale data en herstart de applicatie.")) {
     localStorage.clear();
     sessionStorage.clear();
@@ -4913,20 +4946,104 @@ function resetApp() {
   }
 }
 
+// Account dropdown functions
+function setupAccountDropdown() {
+  const superAdminOption = document.getElementById('superAdminOption');
+  if (superAdminOption && currentAuth?.role === 'superadmin') {
+    superAdminOption.style.display = 'block';
+  }
+}
+
+function toggleAccountDropdown() {
+  const dropdown = document.getElementById('accountDropdown');
+  if (dropdown) {
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+function showSwitchTenantModal() {
+  const modal = document.getElementById('switchTenantModal');
+  const select = document.getElementById('switchTenantSelect');
+  const info = document.getElementById('switchTenantInfo');
+  const details = document.getElementById('switchTenantDetails');
+  
+  if (!modal || !select) return;
+  
+  // Get known organizations
+  const orgs = Auth.getKnownOrganizations();
+  
+  // Populate dropdown
+  select.innerHTML = '<option value="">Kies een organisatie...</option>';
+  orgs.forEach(org => {
+    if (org.slug !== currentAuth?.orgSlug) {
+      const option = document.createElement('option');
+      option.value = org.slug;
+      option.textContent = `${org.name} (${org.plan})`;
+      select.appendChild(option);
+    }
+  });
+  
+  // Show organization info when selected
+  select.onchange = function() {
+    const selectedOrg = orgs.find(org => org.slug === this.value);
+    if (selectedOrg) {
+      details.innerHTML = `
+        <div><strong>Naam:</strong> ${selectedOrg.name}</div>
+        <div><strong>Plan:</strong> ${selectedOrg.plan}</div>
+        <div><strong>Aangemaakt:</strong> ${new Date(selectedOrg.created).toLocaleDateString('nl-NL')}</div>
+      `;
+      info.style.display = 'block';
+    } else {
+      info.style.display = 'none';
+    }
+  };
+  
+  // Close dropdown and show modal
+  document.getElementById('accountDropdown').style.display = 'none';
+  modal.showModal();
+}
+
+function performTenantSwitch() {
+  const select = document.getElementById('switchTenantSelect');
+  const selectedSlug = select.value;
+  
+  if (!selectedSlug) {
+    alert('Selecteer een organisatie');
+    return;
+  }
+  
+  if (Auth.switchOrg(selectedSlug)) {
+    location.reload();
+  } else {
+    alert('Fout bij het wisselen van organisatie');
+  }
+}
+
+function switchToSuperAdmin() {
+  if (currentAuth?.role !== 'superadmin') {
+    alert('Alleen super admins kunnen naar platform modus gaan');
+    return;
+  }
+  
+  if (currentAuth.orgSlug !== 'PLANWISE_PLATFORM') {
+    if (confirm('Naar platformmodus gaan?')) {
+      if (Auth.becomeSuperAdmin()) {
+        location.reload();
+      } else {
+        alert('Fout bij het wisselen naar Super Admin modus');
+      }
+    }
+  } else {
+    alert('Je bent al in Super Admin modus');
+  }
+}
+
 function logout() {
   if (confirm("Weet je zeker dat je wilt uitloggen?")) {
-    localStorage.removeItem('planwise_current_tenant');
-    localStorage.removeItem('planwise_current_user');
-    localStorage.removeItem('planwise_current_user_role');
-    currentTenant = null;
-    currentUser = null;
-    currentUserRole = null;
-    
-    // Clear state
+    Auth.logout();
+    currentAuth = null;
     state = {};
-    
-    // Show login modal
-    showLoginModal();
+    location.reload();
   }
 }
 
