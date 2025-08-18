@@ -588,7 +588,18 @@ let state = loadState() || seedDemo(structuredClone(defaultState));
 let calendar = null;     // FullCalendar instance
 let currentRoute = "new";
 
-document.addEventListener("DOMContentLoaded", setup);
+document.addEventListener("DOMContentLoaded", function() {
+  // Register dialog polyfill for GitHub Pages compatibility
+  if (typeof dialogPolyfill !== 'undefined') {
+    const dialogs = document.querySelectorAll('dialog');
+    dialogs.forEach(dialog => {
+      dialogPolyfill.registerDialog(dialog);
+    });
+    console.log('Dialog polyfill registered for', dialogs.length, 'dialogs');
+  }
+  
+  setup();
+});
 
 // Register service worker for PWA functionality
 if ('serviceWorker' in navigator) {
@@ -3397,6 +3408,7 @@ function updateNavigationForSuperAdmin() {
     <button class="nav-btn" onclick="go('platform-analytics')">📊 Analytics</button>
     <button class="nav-btn" onclick="go('platform-billing')">💰 Billing</button>
     <button class="nav-btn" onclick="showPlatformSettingsModal()">⚙️ Settings</button>
+    <button class="nav-btn" onclick="resetApp()" style="background: rgba(255,165,0,0.1); border-color: rgba(255,165,0,0.3);">🔄 Reset</button>
     <button class="nav-btn" onclick="logout()" style="margin-left: auto; background: rgba(255,0,0,0.1); border-color: rgba(255,0,0,0.3);">🚪 Logout</button>
   `;
 }
@@ -4891,6 +4903,14 @@ function handleRegister() {
   applyRoleBasedUI();
   
   alert(`Account aangemaakt! Welkom bij PlanWise, ${username}. Je rol is: ${ROLE_PERMISSIONS[role]?.name || 'Gebruiker'}.`);
+}
+
+function resetApp() {
+  if (confirm("Weet je zeker dat je de app wilt resetten? Dit verwijdert alle lokale data en herstart de applicatie.")) {
+    localStorage.clear();
+    sessionStorage.clear();
+    location.reload();
+  }
 }
 
 function logout() {

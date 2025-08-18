@@ -8,6 +8,10 @@
   <link rel="manifest" href="manifest.json" />
   <!-- FullCalendar voor het Dashboard -->
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet" />
+  <!-- Dialog polyfill voor GitHub Pages compatibiliteit -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dialog-polyfill/0.5.6/dialog-polyfill.min.js"></script>
+  <!-- Fixed FullCalendar script voor GitHub Pages -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/main.min.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -32,6 +36,7 @@
           <option value="">Rol wisselen...</option>
         </select>
       </div>
+      <button class="nav-btn" onclick="resetApp()" style="background: rgba(255,165,0,0.1); border-color: rgba(255,165,0,0.3);">🔄 Reset</button>
       <button class="nav-btn" onclick="logout()" style="background: rgba(255,0,0,0.1); border-color: rgba(255,0,0,0.3);">🚪 Uitloggen</button>
     </nav>
   </header>
@@ -623,27 +628,7 @@
     </article>
   </template>
 
-  <!-- FullCalendar (voor Dashboard) -->
- <script>
-    // Load FullCalendar synchronously
-    document.write('<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.js"><\/script>');
-    
-    // Fallback if first CDN fails
-    window.addEventListener('load', function() {
-      if (typeof FullCalendar === 'undefined') {
-        console.log('Loading backup FullCalendar...');
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/main.min.js';
-        script.onload = function() {
-          console.log('Backup FullCalendar loaded');
-          if (window.initDashboardAfterLoad) {
-            window.initDashboardAfterLoad();
-          }
-        };
-        document.head.appendChild(script);
-      }
-    });
-  </script>
+
 
   <!-- Installation Modal -->
   <dialog id="installationModal" class="modal">
