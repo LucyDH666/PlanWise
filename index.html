@@ -806,11 +806,18 @@
         <div class="form">
           <div class="field">
             <label>Bedrijfsnaam of Login-slug</label>
-            <input id="loginCompany" type="text" required placeholder="Uw bedrijfsnaam of login-slug" list="availableOrganizations">
+            <div style="position: relative;">
+              <input id="loginCompany" type="text" required placeholder="Uw bedrijfsnaam of login-slug" list="availableOrganizations">
+              <button type="button" id="showSlugHelp" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #666; cursor: help; font-size: 16px;" title="Toon beschikbare slugs">❓</button>
+            </div>
             <datalist id="availableOrganizations">
               <!-- Dynamisch gevuld door JavaScript -->
             </datalist>
             <div id="loginError" class="error-message" style="display: none; color: #ef4444; font-size: 0.875em; margin-top: 4px;"></div>
+            <div id="slugHelp" class="slug-help" style="display: none; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-top: 4px; font-size: 0.875em; color: #666;">
+              <strong>Beschikbare organisaties:</strong>
+              <div id="slugList" style="margin-top: 4px;"></div>
+            </div>
           </div>
           <div class="field">
             <label>Gebruikersnaam</label>
@@ -1130,5 +1137,6 @@
   <script src="test_data_service.js?v=2025-08-14"></script>
   <script src="test_role_based_ui.js?v=2025-08-14"></script>
   <script src="test_persistent_settings.js?v=2025-08-14"></script>
+  <script src="test_ux_improvements.js?v=2025-08-14"></script>
 </body>
 </html>

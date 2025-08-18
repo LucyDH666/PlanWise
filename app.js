@@ -1219,28 +1219,36 @@ function guessDuration(cat){ const map={ "CV-onderhoud":60,"Loodgieter":90,"Elek
 
 /* -------------------- PLANNER -------------------- */
 function renderBoard(){
-  const cols = { new:$("#col-new"), proposals:$("#col-proposals"), approval:$("#col-approval"), scheduled:$("#col-scheduled") };
-  Object.values(cols).forEach(c=> c && (c.innerHTML=""));
+  // Show loading state
+  showViewLoader("planner");
+  
+  setTimeout(() => {
+    const cols = { new:$("#col-new"), proposals:$("#col-proposals"), approval:$("#col-approval"), scheduled:$("#col-scheduled") };
+    Object.values(cols).forEach(c=> c && (c.innerHTML=""));
 
-  const tpl=$("#cardTemplate"); const q=($("#searchInput")?.value||"").toLowerCase();
-  state.tickets.filter(t=> [t.customer_name,t.address,t.category,t.description].join(" ").toLowerCase().includes(q))
-  .forEach(t=>{
-    const node=tpl.content.firstElementChild.cloneNode(true);
-    node.querySelector(".t-customer").textContent=t.customer_name;
-    node.querySelector(".t-meta").textContent=`${t.address} • ${t.email} • ${new Date(t.createdAt).toLocaleString("nl-NL")}`;
-    const icon={ "CV-onderhoud":"🔥","Loodgieter":"🚰","Elektra":"⚡","Airco/Koeling":"❄️","Algemeen":"🧰" }[t.category||"Algemeen"];
-    node.querySelector(".t-category").textContent=`${icon} ${t.category||"Algemeen"}`;
-    node.querySelector(".t-desc").textContent=t.description||"—";
-    const tags=node.querySelector(".t-tags");
-    [t.window||"geen voorkeur", t.sla_days?`SLA: ${t.sla_days}d`:"geen SLA", `${t.duration_min||60} min`].forEach(v=>tags.appendChild(createEl("span","tag",v)));
-    node.querySelector(".plan-btn").addEventListener("click", ()=> openProposals(t.id));
-    node.querySelector(".approve-btn").addEventListener("click", ()=> approveFlow(t.id));
-    node.querySelector(".delete-btn").addEventListener("click", ()=> deleteTicket(t.id));
-    (t.status==="new")? cols.new.appendChild(node) :
-    (t.status==="proposed")? cols.proposals.appendChild(node) :
-    (t.status==="await_approval")? cols.approval.appendChild(node) :
-    cols.scheduled.appendChild(node);
-  });
+    const tpl=$("#cardTemplate"); const q=($("#searchInput")?.value||"").toLowerCase();
+    state.tickets.filter(t=> [t.customer_name,t.address,t.category,t.description].join(" ").toLowerCase().includes(q))
+    .forEach(t=>{
+      const node=tpl.content.firstElementChild.cloneNode(true);
+      node.querySelector(".t-customer").textContent=t.customer_name;
+      node.querySelector(".t-meta").textContent=`${t.address} • ${t.email} • ${new Date(t.createdAt).toLocaleString("nl-NL")}`;
+      const icon={ "CV-onderhoud":"🔥","Loodgieter":"🚰","Elektra":"⚡","Airco/Koeling":"❄️","Algemeen":"🧰" }[t.category||"Algemeen"];
+      node.querySelector(".t-category").textContent=`${icon} ${t.category||"Algemeen"}`;
+      node.querySelector(".t-desc").textContent=t.description||"—";
+      const tags=node.querySelector(".t-tags");
+      [t.window||"geen voorkeur", t.sla_days?`SLA: ${t.sla_days}d`:"geen SLA", `${t.duration_min||60} min`].forEach(v=>tags.appendChild(createEl("span","tag",v)));
+      node.querySelector(".plan-btn").addEventListener("click", ()=> openProposals(t.id));
+      node.querySelector(".approve-btn").addEventListener("click", ()=> approveFlow(t.id));
+      node.querySelector(".delete-btn").addEventListener("click", ()=> deleteTicket(t.id));
+      (t.status==="new")? cols.new.appendChild(node) :
+      (t.status==="proposed")? cols.proposals.appendChild(node) :
+      (t.status==="await_approval")? cols.approval.appendChild(node) :
+      cols.scheduled.appendChild(node);
+    });
+    
+    // Hide loading state
+    hideViewLoader("planner");
+  }, 100);
 }
 
 async function openProposals(ticketId){
@@ -1623,20 +1631,28 @@ function downloadFile(name, content, type){ const a=document.createElement("a");
 
 /* -------------------- INSTELLINGEN -------------------- */
 function renderTechTable(){
-  const tbody=$("#techTable tbody"); if(!tbody) return;
-  tbody.innerHTML="";
-  state.technicians.forEach(tech=>{
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td><input value="${tech.name}"/></td><td><input value="${tech.email}"/></td><td><input value="${tech.calendarId}"/></td><td><input value="${(tech.skills||[]).join(", ")}"/></td><td><input value="${tech.hub||""}"/></td><td><button class="btn small ghost">Verwijderen</button></td>`;
-    tr.querySelector("button").onclick=()=>{ state.technicians=state.technicians.filter(t=>t.id!==tech.id); saveState(); renderTechTable(); toast("🗑️ Monteur verwijderd"); };
-    const ins=tr.querySelectorAll("input");
-    ins[0].oninput=e=>{ tech.name=e.target.value; saveState(); };
-    ins[1].oninput=e=>{ tech.email=e.target.value; saveState(); };
-    ins[2].oninput=e=>{ tech.calendarId=e.target.value; saveState(); };
-    ins[3].oninput=e=>{ tech.skills=e.target.value.split(",").map(s=>s.trim()).filter(Boolean); saveState(); };
-    ins[4].oninput=e=>{ tech.hub=e.target.value; saveState(); };
-    tbody.appendChild(tr);
-  });
+  // Show loading state
+  showViewLoader("settings");
+  
+  setTimeout(() => {
+    const tbody=$("#techTable tbody"); if(!tbody) return;
+    tbody.innerHTML="";
+    state.technicians.forEach(tech=>{
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td><input value="${tech.name}"/></td><td><input value="${tech.email}"/></td><td><input value="${tech.calendarId}"/></td><td><input value="${(tech.skills||[]).join(", ")}"/></td><td><input value="${tech.hub||""}"/></td><td><button class="btn small ghost">Verwijderen</button></td>`;
+      tr.querySelector("button").onclick=()=>{ state.technicians=state.technicians.filter(t=>t.id!==tech.id); saveState(); renderTechTable(); toast("🗑️ Monteur verwijderd"); };
+      const ins=tr.querySelectorAll("input");
+      ins[0].oninput=e=>{ tech.name=e.target.value; saveState(); };
+      ins[1].oninput=e=>{ tech.email=e.target.value; saveState(); };
+      ins[2].oninput=e=>{ tech.calendarId=e.target.value; saveState(); };
+      ins[3].oninput=e=>{ tech.skills=e.target.value.split(",").map(s=>s.trim()).filter(Boolean); saveState(); };
+      ins[4].oninput=e=>{ tech.hub=e.target.value; saveState(); };
+      tbody.appendChild(tr);
+    });
+    
+    // Hide loading state
+    hideViewLoader("settings");
+  }, 100);
 }
 function onAddTech(){ 
   if (!requirePermission('edit_technicians')) return;
@@ -1660,31 +1676,112 @@ function onSaveSettings(){
 function showSkeletons(colId,n=2){ const c=document.getElementById(colId); if(!c) return; for(let i=0;i<n;i++){ const d=document.createElement("div"); d.className="card skel"; c.appendChild(d);} }
 function clearSkeletons(colId){ const c=document.getElementById(colId); if(!c) return; c.querySelectorAll(".skel").forEach(e=>e.remove()); }
 
+/* -------------------- VIEW LOADERS -------------------- */
+function showViewLoader(viewName) {
+  const container = document.getElementById(`route-${viewName}`);
+  if (!container) return;
+  
+  // Remove existing loader
+  const existingLoader = container.querySelector('.view-loader');
+  if (existingLoader) existingLoader.remove();
+  
+  // Create loader element
+  const loader = document.createElement('div');
+  loader.className = 'view-loader';
+  loader.innerHTML = `
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Laden...</div>
+  `;
+  loader.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  `;
+  
+  // Add spinner styles if not already present
+  if (!document.querySelector('#view-loader-styles')) {
+    const style = document.createElement('style');
+    style.id = 'view-loader-styles';
+    style.textContent = `
+      .loader-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 12px;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .loader-text {
+        color: #666;
+        font-size: 14px;
+      }
+      .route {
+        position: relative;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  
+  container.appendChild(loader);
+}
+
+function hideViewLoader(viewName) {
+  const container = document.getElementById(`route-${viewName}`);
+  if (!container) return;
+  
+  const loader = container.querySelector('.view-loader');
+  if (loader) {
+    loader.style.opacity = '0';
+    loader.style.transition = 'opacity 0.3s ease-out';
+    setTimeout(() => loader.remove(), 300);
+  }
+}
+
 /* -------------------- DASHBOARD (FullCalendar) -------------------- */
 function ensureDashboard(){
   console.log("ensureDashboard called");
   
-  try {
-    // Fill filters
-    const techSel=$("#dashTech");
-    if(techSel){ 
-      techSel.innerHTML=`<option value="">Alle monteurs</option>` + 
-        state.technicians.map(t=>`<option value="${t.name}">${t.name}</option>`).join(""); 
+  // Show loading state
+  showViewLoader("dashboard");
+  
+  setTimeout(() => {
+    try {
+      // Fill filters
+      const techSel=$("#dashTech");
+      if(techSel){ 
+        techSel.innerHTML=`<option value="">Alle monteurs</option>` + 
+          state.technicians.map(t=>`<option value="${t.name}">${t.name}</option>`).join(""); 
+      }
+
+      // Try to initialize directly
+      initCalendar();
+
+      // Event listeners for filters (only add if they don't exist)
+      setupDashboardListeners();
+      
+      // Run health check
+      runDashboardHealthCheck();
+      
+    } catch (error) {
+      console.error("Critical error in ensureDashboard:", error);
+      showCalendarFallback();
+    } finally {
+      // Hide loading state
+      hideViewLoader("dashboard");
     }
-
-    // Try to initialize directly
-    initCalendar();
-
-    // Event listeners for filters (only add if they don't exist)
-    setupDashboardListeners();
-    
-    // Run health check
-    runDashboardHealthCheck();
-    
-  } catch (error) {
-    console.error("Critical error in ensureDashboard:", error);
-    showCalendarFallback();
-  }
+  }, 100);
 }
 
 // Global function for delayed init
@@ -3259,18 +3356,26 @@ window.loadFullCalendar = function() {
 function ensureInstallations() {
   console.log("Setup installaties...");
   
-  // Ensure installations exists in state
-  if (!state.installations) {
-    state.installations = [];
-    saveState();
-  }
+  // Show loading state
+  showViewLoader("installations");
   
-  setupInstallationListeners();
-  updateInstallationFilterDropdown();
-  renderInstallationsTable();
-  
-  // Auto-sync installations with maintenance on load
-  syncInstallationsWithMaintenance();
+  setTimeout(() => {
+    // Ensure installations exists in state
+    if (!state.installations) {
+      state.installations = [];
+      saveState();
+    }
+    
+    setupInstallationListeners();
+    updateInstallationFilterDropdown();
+    renderInstallationsTable();
+    
+    // Auto-sync installations with maintenance on load
+    syncInstallationsWithMaintenance();
+    
+    // Hide loading state
+    hideViewLoader("installations");
+  }, 100);
 }
 
 function setupInstallationListeners() {
@@ -3773,10 +3878,18 @@ function showSuperAdminInterface() {
 function loadPlatformData() {
   console.log("Loading platform data...");
   
-  renderPlatformStats();
-  renderTenantsTable();
-  renderAllUsersTable();
-  renderSystemLogs();
+  // Show loading state
+  showViewLoader("superadmin");
+  
+  setTimeout(() => {
+    renderPlatformStats();
+    renderTenantsTable();
+    renderAllUsersTable();
+    renderSystemLogs();
+    
+    // Hide loading state
+    hideViewLoader("superadmin");
+  }, 100);
 }
 
 function renderPlatformStats() {
@@ -5055,6 +5168,9 @@ function showLoginModal() {
   
   // Use enhanced modal opening
   openModal('loginModal');
+  
+  // Setup slug help functionality
+  setupSlugHelp();
 }
 
 function showRegisterModal() {
@@ -5173,6 +5289,57 @@ function populateAvailableOrganizations() {
     option.textContent = `${tenant.info.company} (${tenant.key})`;
     datalist.appendChild(option);
   });
+  
+  // Also populate slug help list
+  populateSlugHelpList();
+}
+
+// Setup slug help functionality
+function setupSlugHelp() {
+  const helpBtn = $("#showSlugHelp");
+  const helpDiv = $("#slugHelp");
+  
+  if (!helpBtn || !helpDiv) return;
+  
+  // Toggle help visibility
+  helpBtn.addEventListener("click", function(e) {
+    e.preventDefault();
+    const isVisible = helpDiv.style.display !== 'none';
+    helpDiv.style.display = isVisible ? 'none' : 'block';
+    helpBtn.textContent = isVisible ? '❓' : '❌';
+    helpBtn.title = isVisible ? 'Toon beschikbare slugs' : 'Verberg lijst';
+  });
+  
+  // Hide help when clicking outside
+  document.addEventListener("click", function(e) {
+    if (!helpBtn.contains(e.target) && !helpDiv.contains(e.target)) {
+      helpDiv.style.display = 'none';
+      helpBtn.textContent = '❓';
+      helpBtn.title = 'Toon beschikbare slugs';
+    }
+  });
+}
+
+// Populate slug help list
+function populateSlugHelpList() {
+  const slugList = $("#slugList");
+  if (!slugList) return;
+  
+  const tenants = getAllTenants();
+  
+  if (tenants.length === 0) {
+    slugList.innerHTML = '<em>Nog geen organisaties geregistreerd</em>';
+    return;
+  }
+  
+  const listHTML = tenants.map(tenant => `
+    <div style="margin-bottom: 4px; padding: 4px; background: white; border-radius: 2px;">
+      <strong>${tenant.info.company}</strong><br>
+      <small style="color: #888;">Slug: <code>${tenant.key}</code></small>
+    </div>
+  `).join('');
+  
+  slugList.innerHTML = listHTML;
 }
 
 function handleRegister() {
