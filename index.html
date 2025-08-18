@@ -1,0 +1,1088 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PlanWise — AI Planner MVP</title>
+  <link rel="stylesheet" href="style.css?v=2025-08-14" />
+  <link rel="manifest" href="manifest.json" />
+  <!-- FullCalendar voor het Dashboard -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">PW</div>
+      <div>
+        <h1>PlanWise</h1>
+        <p class="subtitle">AI Planner voor installateurs & vastgoedbeheer</p>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn" data-route="dashboard" data-requires-permission="view_dashboard">Dashboard</button>
+      <button class="nav-btn" data-route="new" data-requires-permission="edit_planner">Nieuwe opdracht</button>
+      <button class="nav-btn" data-route="planner" data-requires-permission="view_planner">Planner</button>
+      <button class="nav-btn" data-route="installations" data-requires-permission="view_installations">Installaties & Onderhoud</button>
+      <button class="nav-btn" data-route="settings" data-requires-permission="edit_settings">Instellingen</button>
+      <div id="currentUserRole" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <!-- Role indicator will be populated by JavaScript -->
+      </div>
+      <div id="roleSwitcher" style="display: none; margin-left: 8px;">
+        <select id="roleSelect" onchange="switchRole(this.value)" style="padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(var(--text-2), 0.2); background: rgba(var(--bg-2), 0.5); font-size: 12px;">
+          <option value="">Rol wisselen...</option>
+        </select>
+      </div>
+      <button class="nav-btn" onclick="logout()" style="background: rgba(255,0,0,0.1); border-color: rgba(255,0,0,0.3);">🚪 Uitloggen</button>
+    </nav>
+  </header>
+
+  <main id="app" class="container">
+    <!-- ROUTE: Nieuwe opdracht -->
+    <section id="route-new" class="route" data-requires-permission="edit_planner">
+      <h2>Nieuwe opdracht</h2>
+      <form id="requestForm" class="card form">
+        <div class="form-grid">
+          <div>
+            <label>Bedrijfs-/Klantnaam</label>
+            <input type="text" name="customer_name" required placeholder="Jansen VvE / Dhr. Jansen" />
+          </div>
+          <div>
+            <label>E-mail</label>
+            <input type="email" name="email" required placeholder="klant@voorbeeld.nl" />
+          </div>
+          <div>
+            <label>Telefoon</label>
+            <input type="tel" name="phone" required placeholder="+31 6 12345678" />
+          </div>
+          <div class="span-2">
+            <label>Adres (voor reistijd)</label>
+            <input type="text" name="address" required placeholder="Straat 1, 1234 AB, Plaats" />
+          </div>
+          <div>
+            <label>Categorie</label>
+            <select name="category" required>
+              <option value="">Kies…</option>
+              <option>CV-onderhoud</option>
+              <option>Loodgieter</option>
+              <option>Elektra</option>
+              <option>Airco/Koeling</option>
+              <option>Algemeen</option>
+            </select>
+          </div>
+          <div>
+            <label>Gewenst tijdvenster</label>
+            <select name="window" required>
+              <option value="">Kies…</option>
+              <option>Ochtend (08:00–12:00)</option>
+              <option>Middag (12:00–17:00)</option>
+              <option>Hele dag</option>
+            </select>
+          </div>
+          <div>
+            <label>Gewenste startdatum</label>
+            <input type="date" name="preferred_start" />
+          </div>
+          <div>
+            <label>Max. doorlooptijd (dagen)</label>
+            <input type="number" name="sla_days" min="0" placeholder="bijv. 3" />
+          </div>
+          <div class="span-2">
+            <label>Omschrijving</label>
+            <textarea name="description" rows="4" placeholder="Korte omschrijving van het probleem of de taak…"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" type="submit">Indienen</button>
+          <span id="reqStatus" class="muted"></span>
+        </div>
+      </form>
+    </section>
+
+    <!-- ROUTE: Planner -->
+    <section id="route-planner" class="route" data-requires-permission="view_planner">
+      <div class="row-between">
+        <h2>Planner</h2>
+        <div class="right">
+          <input id="searchInput" type="search" class="search" placeholder="Zoek op klant, adres, categorie…" />
+        </div>
+      </div>
+
+      <div class="kanban">
+        <div class="column">
+          <h3>Nieuw</h3>
+          <div id="col-new" class="stack"></div>
+        </div>
+        <div class="column">
+          <h3>Voorstellen (AI)</h3>
+          <div id="col-proposals" class="stack"></div>
+        </div>
+        <div class="column">
+          <h3>Wachten op goedkeuring</h3>
+          <div id="col-approval" class="stack"></div>
+        </div>
+        <div class="column">
+          <h3>Gepland</h3>
+          <div id="col-scheduled" class="stack"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ✅ NIEUW: ROUTE Dashboard -->
+    <section id="route-dashboard" class="route">
+      <div class="row-between">
+        <h2>Dashboard</h2>
+        <div class="right">
+          <select id="dashTech" class="search" title="Filter monteur">
+            <option value="">Alle monteurs</option>
+          </select>
+          <select id="dashView" class="search" title="Weergave">
+            <option value="Week">Week</option>
+            <option value="dayGridMonth">Maand</option>
+          </select>
+          <input id="dashSearch" class="search" placeholder="Zoek klant/adres…" />
+        </div>
+      </div>
+      <div class="card" style="padding:0; min-height: 650px;">
+        <div class="calendar-wrap">
+          <div id="calendar"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROUTE: Instellingen -->
+    <section id="route-settings" class="route" data-requires-permission="edit_settings">
+      <h2>Instellingen</h2>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Monteurs</h3>
+          <table class="table" id="techTable" aria-describedby="techHelp">
+            <thead>
+              <tr>
+                <th>Naam</th>
+                <th>E-mail</th>
+                <th>Agenda-ID</th>
+                <th>Skills</th>
+                <th>Standplaats</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p id="techHelp" class="muted">Gebruik skills om matching te sturen. Agenda‑ID = Google Calendar ID of Outlook UPN.</p>
+          <button class="btn" id="addTechBtn" data-requires-permission="edit_technicians">Monteur toevoegen</button>
+        </div>
+
+        <div class="card">
+          <h3>Integraties</h3>
+          <div class="form-grid">
+            <div class="span-2">
+              <label>Relay Webhook (Voorstellen)</label>
+              <input type="url" id="relayWebhook" placeholder="https://api.relay.app/hooks/proposals..." />
+            </div>
+            <div class="span-2">
+              <label>Relay Webhook (Inplannen)</label>
+              <input type="url" id="relayWebhookSchedule" placeholder="https://api.relay.app/hooks/schedule..." />
+            </div>
+            <div>
+              <label>Google API Key</label>
+              <input type="password" id="gmapsKey" placeholder="••••••" />
+            </div>
+            <div>
+              <label>OpenAI API Key</label>
+              <input type="password" id="openaiKey" placeholder="••••••" />
+            </div>
+            <div class="span-2">
+              <label>AFAS Connector endpoint (optioneel)</label>
+              <input type="url" id="afasUrl" placeholder="https://{env}.afas.online/profitrestservices/..." />
+            </div>
+            <div>
+              <label>AFAS token</label>
+              <input type="password" id="afasToken" placeholder="••••••" />
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn primary" id="saveSettings" data-requires-permission="edit_settings">Opslaan</button>
+            <span id="settingsStatus" class="muted"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROUTE: Installaties & Onderhoud -->
+    <section id="route-installations" class="route" data-requires-permission="view_installations">
+      <div class="row-between" style="margin-bottom: 20px;">
+        <h2>Installaties & Onderhoud</h2>
+        <div class="right">
+                  <button class="btn" onclick="showMaintenanceModal()" data-requires-permission="plan_maintenance">🔧 Onderhoudsplanning</button>
+        <button class="btn" onclick="generateMaintenanceFromContracts()" data-requires-permission="plan_maintenance">📋 Plan Contract Onderhoud</button>
+        <button class="btn primary" onclick="showInstallationModal()" data-requires-permission="edit_installations">➕ Nieuwe Installatie</button>
+        <button class="btn" onclick="showInstallationTypesModal()" data-requires-permission="edit_installations">⚙️ Types Beheren</button>
+        <button class="btn" onclick="downloadExcelTemplate()" data-requires-permission="export_data">📄 Excel Template</button>
+        <label class="btn" for="excelImport" style="margin: 0; cursor: pointer;" data-requires-permission="edit_installations">📂 Importeer Excel</label>
+          <input type="file" id="excelImport" accept=".xlsx,.xls" style="display: none;" onchange="handleExcelImport(event)">
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="row-between">
+          <div class="left">
+            <input id="installationSearch" class="search" placeholder="Zoek installaties..." style="width: 300px;">
+          </div>
+          <div class="right">
+            <select id="installationFilter" class="search">
+              <option value="">Alle types</option>
+              <option value="Vickers">Vickers</option>
+              <option value="Airco">Airco</option>
+              <option value="Ketel">Ketel</option>
+              <option value="Ventilatie">Ventilatie</option>
+              <option value="Elektra">Elektra</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="installationsTable"></div>
+      </div>
+      
+      <!-- Contract Status Summary -->
+      <div class="card">
+        <h3>Contract Overzicht</h3>
+        <div id="contractSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;"></div>
+      </div>
+    </section>
+
+    <!-- ROUTE: Monteur Dashboard -->
+    <section id="route-technician" class="route">
+      <div class="row-between">
+        <h2>🔧 Monteur Dashboard</h2>
+        <div class="right">
+          <button class="btn" onclick="refreshTechnicianTasks()">🔄 Refresh</button>
+          <button class="btn" onclick="syncOfflineData()">📡 Sync Offline Data</button>
+          <button class="btn" onclick="showOfflineStatus()">📱 Offline Status</button>
+        </div>
+      </div>
+      
+      <!-- Today's Tasks -->
+      <div class="card">
+        <h3>📅 Vandaag's Taken</h3>
+        <div id="todayTasks" class="task-list"></div>
+      </div>
+      
+      <!-- Upcoming Tasks -->
+      <div class="card">
+        <h3>📋 Aankomende Taken</h3>
+        <div id="upcomingTasks" class="task-list"></div>
+      </div>
+      
+      <!-- Completed Tasks -->
+      <div class="card">
+        <h3>✅ Voltooide Taken</h3>
+        <div id="completedTasks" class="task-list"></div>
+      </div>
+    </section>
+
+    <!-- ROUTE: Super Admin Dashboard -->
+    <section id="route-superadmin" class="route">
+      <div class="row-between">
+        <h2>🔧 Super Admin Dashboard</h2>
+        <div class="right">
+          <button class="btn" onclick="refreshTenantData()">🔄 Refresh</button>
+          <button class="btn" onclick="showPlatformSettingsModal()">⚙️ Platform Settings</button>
+          <button class="btn" onclick="exportAllData()">📊 Export All Data</button>
+        </div>
+      </div>
+      
+      <!-- Platform Statistics -->
+      <div class="card">
+        <h3>Platform Statistieken</h3>
+        <div id="platformStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;"></div>
+      </div>
+      
+      <!-- Organization Management -->
+      <div class="card">
+        <h3>Organisatie Beheer</h3>
+        <div class="row-between" style="margin-bottom: 16px;">
+          <div class="left">
+            <input id="tenantSearch" class="search" placeholder="Zoek organisaties..." style="width: 300px;">
+          </div>
+          <div class="right">
+            <button class="btn primary" onclick="showCreateOrganizationModal()">🏢 Nieuwe Organisatie</button>
+            <select id="tenantFilter" class="search" style="margin-left: 8px;">
+              <option value="">Alle statussen</option>
+              <option value="trial">Trial</option>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="tenantsTable"></div>
+        
+        <!-- Users Sub-section -->
+        <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="margin-bottom: 16px;">Gebruikers</h4>
+          <div class="row-between" style="margin-bottom: 16px;">
+            <div class="left">
+              <input id="userSearch" class="search" placeholder="Zoek gebruikers..." style="width: 300px;">
+            </div>
+            <div class="right">
+              <button class="btn primary" onclick="showCreateUserModal()">👤 Nieuwe Gebruiker</button>
+            </div>
+          </div>
+          <div id="allUsersTable"></div>
+        </div>
+      </div>
+      
+      <!-- System Logs -->
+      <div class="card">
+        <h3>System Logs</h3>
+        <div id="systemLogs" style="max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85em;"></div>
+      </div>
+    </section>
+
+    <!-- ROUTE: Platform Analytics -->
+    <section id="route-platform-analytics" class="route">
+      <div class="row-between">
+        <h2>📊 Platform Analytics</h2>
+        <div class="right">
+          <button class="btn" onclick="refreshAnalytics()">🔄 Refresh</button>
+          <button class="btn" onclick="exportAnalytics()">📄 Export Data</button>
+        </div>
+      </div>
+      
+      <!-- Usage Statistics -->
+      <div class="card">
+        <h3>Gebruiksstatistieken</h3>
+        <div id="usageStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;"></div>
+      </div>
+      
+      <!-- Growth Charts -->
+      <div class="card">
+        <h3>Groei Overzicht</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div>
+            <h4>Organisatie Registraties (Laatste 30 Dagen)</h4>
+            <div id="tenantGrowthChart" style="height: 200px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; display: flex; align-items: center; justify-content: center; color: rgb(var(--txt-3));">
+              Chart wordt hier weergegeven
+            </div>
+          </div>
+          <div>
+            <h4>Actieve Gebruikers per Dag</h4>
+            <div id="activeUsersChart" style="height: 200px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; display: flex; align-items: center; justify-content: center; color: rgb(var(--txt-3));">
+              Chart wordt hier weergegeven
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Feature Usage -->
+      <div class="card">
+        <h3>Feature Gebruik</h3>
+        <div id="featureUsageTable"></div>
+      </div>
+    </section>
+
+    <!-- ROUTE: Platform Billing -->
+    <section id="route-platform-billing" class="route">
+      <div class="row-between">
+        <h2>💰 Platform Billing</h2>
+        <div class="right">
+          <button class="btn" onclick="generateInvoices()">📄 Generate Invoices</button>
+          <button class="btn" onclick="exportBillingData()">📊 Export Billing</button>
+        </div>
+      </div>
+      
+      <!-- Revenue Overview -->
+      <div class="card">
+        <h3>Omzet Overzicht</h3>
+        <div id="revenueStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;"></div>
+      </div>
+      
+      <!-- Subscription Management -->
+      <div class="card">
+        <h3>Organisatie Abonnementen</h3>
+        <div class="row-between" style="margin-bottom: 16px;">
+          <div class="left">
+            <input id="billingSearch" class="search" placeholder="Zoek organisatie..." style="width: 300px;">
+          </div>
+          <div class="right">
+            <select id="billingFilter" class="search">
+              <option value="">Alle statussen</option>
+              <option value="active">Actief</option>
+              <option value="trial">Trial</option>
+              <option value="overdue">Achterstallig</option>
+              <option value="suspended">Gesuspendeerd</option>
+            </select>
+          </div>
+        </div>
+        <div id="subscriptionsTable"></div>
+      </div>
+      
+      <!-- Payment History -->
+      <div class="card">
+        <h3>Betalingshistorie</h3>
+        <div id="paymentHistoryTable"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modals -->
+  <dialog id="proposalModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>AI-voorstellen</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div id="proposalList" class="proposal-list"></div>
+        <div class="muted small">Tip: klik op een voorstel om details te zien of pas de tijden aan.</div>
+        <div class="field-inline">
+          <label>Eigen voorstel</label>
+          <input id="customStart" type="datetime-local" />
+          <input id="customEnd" type="datetime-local" />
+          <select id="customTech"></select>
+          <button type="button" class="btn" id="useCustom">Gebruik</button>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Annuleren</button>
+        <button class="btn primary" id="confirmProposal" value="ok">Bevestigen</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="emailModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>E-mail naar klant</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <label>Onderwerp</label>
+        <input id="emailSubject" />
+        <label>Bericht</label>
+        <textarea id="emailBody" rows="10"></textarea>
+        <div class="attach">
+          <button class="btn" id="downloadIcs" type="button">ICS‑uitnodiging downloaden</button>
+          <span class="muted small">Bij live‑gebruik voeg je de ICS als bijlage toe via je e‑mailprovider.</span>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Sluiten</button>
+        <button class="btn primary" id="sendEmail" value="ok">Versturen</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="eventModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Afspraak Details</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="span-2">
+            <label>Titel</label>
+            <input id="eventTitle" />
+          </div>
+          <div>
+            <label>Start datum/tijd</label>
+            <input id="eventStart" type="datetime-local" />
+          </div>
+          <div>
+            <label>Eind datum/tijd</label>
+            <input id="eventEnd" type="datetime-local" />
+          </div>
+          <div>
+            <label>Klant</label>
+            <input id="eventClient" />
+          </div>
+          <div>
+            <label>Monteur</label>
+            <select id="eventTech">
+              <option value="">Selecteer monteur</option>
+            </select>
+          </div>
+          <div class="span-2">
+            <label>Adres</label>
+            <input id="eventAddress" />
+          </div>
+          <div class="span-2">
+            <label>Opmerkingen</label>
+            <textarea id="eventNotes" rows="3"></textarea>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn ghost" id="deleteEvent" type="button">Verwijderen</button>
+        <button class="btn" value="cancel">Annuleren</button>
+        <button class="btn primary" id="saveEvent" type="button">Opslaan</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Werkbon Modal -->
+  <dialog id="workOrderModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>📋 Werkbon - <span id="workOrderTitle">Taak</span></h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <!-- Task Info -->
+        <div class="task-info">
+          <div class="info-grid">
+            <div>
+              <label>Klant</label>
+              <div id="workOrderClient" class="info-value"></div>
+            </div>
+            <div>
+              <label>Adres</label>
+              <div id="workOrderAddress" class="info-value"></div>
+            </div>
+            <div>
+              <label>Datum/Tijd</label>
+              <div id="workOrderDateTime" class="info-value"></div>
+            </div>
+            <div>
+              <label>Type</label>
+              <div id="workOrderType" class="info-value"></div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Checklist -->
+        <div class="checklist-section">
+          <h4>✅ Checklist</h4>
+          <div id="workOrderChecklist" class="checklist"></div>
+          <button type="button" class="btn small" onclick="addChecklistItem()">➕ Voeg item toe</button>
+        </div>
+        
+        <!-- Materials -->
+        <div class="materials-section">
+          <h4>🔧 Materialen</h4>
+          <div id="workOrderMaterials" class="materials-list"></div>
+          <button type="button" class="btn small" onclick="addMaterialItem()">➕ Voeg materiaal toe</button>
+        </div>
+        
+        <!-- Photos -->
+        <div class="photos-section">
+          <h4>📸 Foto's</h4>
+          <div id="workOrderPhotos" class="photos-grid"></div>
+          <input type="file" id="photoUpload" accept="image/*" multiple style="display: none;" onchange="handlePhotoUpload(event)">
+          <button type="button" class="btn small" onclick="document.getElementById('photoUpload').click()">📷 Foto toevoegen</button>
+        </div>
+        
+        <!-- Notes -->
+        <div class="notes-section">
+          <h4>📝 Notities</h4>
+          <textarea id="workOrderNotes" rows="4" placeholder="Voeg notities toe..."></textarea>
+        </div>
+        
+        <!-- Signature -->
+        <div class="signature-section">
+          <h4>✍️ Handtekening</h4>
+          <canvas id="signatureCanvas" width="400" height="200" style="border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; cursor: crosshair;"></canvas>
+          <div class="signature-controls">
+            <button type="button" class="btn small" onclick="clearSignature()">🗑️ Wissen</button>
+            <button type="button" class="btn small" onclick="saveSignature()">💾 Opslaan</button>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Annuleren</button>
+        <button class="btn" type="button" onclick="saveWorkOrderAsDraft()">💾 Concept</button>
+        <button class="btn primary" type="button" onclick="completeWorkOrder()">✅ Voltooien</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- Ticket template -->
+  <template id="cardTemplate">
+    <article class="ticket card">
+      <header class="ticket-head">
+        <div>
+          <strong class="t-customer"></strong>
+          <div class="muted small t-meta"></div>
+        </div>
+        <span class="badge t-category"></span>
+      </header>
+      <div class="ticket-body">
+        <p class="t-desc"></p>
+        <div class="t-tags"></div>
+      </div>
+      <footer class="ticket-foot">
+        <button class="btn small plan-btn">Genereer voorstellen</button>
+        <button class="btn small ghost approve-btn">Goedkeuren</button>
+        <button class="btn small danger delete-btn">🗑️</button>
+      </footer>
+    </article>
+  </template>
+
+  <!-- FullCalendar (voor Dashboard) -->
+ <script>
+    // Load FullCalendar synchronously
+    document.write('<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.js"><\/script>');
+    
+    // Fallback if first CDN fails
+    window.addEventListener('load', function() {
+      if (typeof FullCalendar === 'undefined') {
+        console.log('Loading backup FullCalendar...');
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/main.min.js';
+        script.onload = function() {
+          console.log('Backup FullCalendar loaded');
+          if (window.initDashboardAfterLoad) {
+            window.initDashboardAfterLoad();
+          }
+        };
+        document.head.appendChild(script);
+      }
+    });
+  </script>
+
+  <!-- Installation Modal -->
+  <dialog id="installationModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3 id="installationModalTitle">Nieuwe Installatie</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <div class="field">
+            <label>Klant *</label>
+            <input id="instClient" type="text" required placeholder="Bedrijf of persoon">
+          </div>
+          <div class="field">
+            <label>Adres *</label>
+            <input id="instAddress" type="text" required placeholder="Straat, nummer, plaats">
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Type Installatie *</label>
+              <select id="instType" required>
+                <option value="">Selecteer type</option>
+                <option value="Vickers">Vickers</option>
+                <option value="Airco">Airco</option>
+                <option value="Ketel">Ketel</option>
+                <option value="Ventilatie">Ventilatie</option>
+                <option value="Elektra">Elektra</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Merk/Model</label>
+              <input id="instModel" type="text" placeholder="Bijv. Daikin VRV-IV">
+            </div>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Installatiedatum</label>
+              <input id="instInstallDate" type="date">
+            </div>
+            <div class="field">
+              <label>Laatste Onderhoud</label>
+              <input id="instLastMaintenance" type="date">
+            </div>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Contract Type</label>
+              <select id="instContractType">
+                <option value="">Geen contract</option>
+                <option value="Basis">Basis onderhoud</option>
+                <option value="Uitgebreid">Uitgebreid onderhoud</option>
+                <option value="Full-service">Full-service</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Contract tot</label>
+              <input id="instContractEnd" type="date">
+            </div>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Contractwaarde (€/jaar)</label>
+              <input id="instContractValue" type="number" min="0" step="50" placeholder="0">
+            </div>
+            <div class="field">
+              <label>Status</label>
+              <div style="padding: 8px 0; color: rgb(var(--txt-2)); font-size: 0.9em;" id="maintenanceStatus">
+                Onderhoud status wordt berekend na opslaan
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Opmerkingen</label>
+            <textarea id="instNotes" rows="3" placeholder="Bijzonderheden, toegangscodes, contactpersoon..."></textarea>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Annuleren</button>
+        <button class="btn primary" id="saveInstallation" value="ok">Opslaan</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Installation Types Modal -->
+  <dialog id="installationTypesModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Installatie Types Beheren</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted small">Beheer de installatie types die beschikbaar zijn voor uw bedrijf. Deze types worden gebruikt bij het toevoegen van installaties en bepalen de onderhoudsfrequentie.</p>
+        
+        <div class="form">
+          <div class="field-inline">
+            <div class="field">
+              <label>Nieuw Type</label>
+              <input id="newInstallationType" type="text" placeholder="Bijv. Warmtepomp, Ventilatie, etc.">
+            </div>
+            <div class="field">
+              <label>Kleur</label>
+              <input id="newInstallationColor" type="color" value="#3b82f6">
+            </div>
+            <div class="field">
+              <label>&nbsp;</label>
+              <button type="button" class="btn primary" onclick="addInstallationType()">Toevoegen</button>
+            </div>
+          </div>
+        </div>
+        
+        <h4>Huidige Types</h4>
+        <div id="installationTypesList"></div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Sluiten</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Maintenance Planning Modal -->
+  <dialog id="maintenanceModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Onderhoudsplanning</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted small">Plan jaarlijks onderhoud op basis van laatste onderhoud & systeem type. Het systeem houdt rekening met seizoensgebonden factoren.</p>
+        
+        <div class="form">
+          <div class="field">
+            <label>
+              <input type="checkbox" id="autoAddMaintenance" checked> 
+              Voeg direct toe aan Dashboard
+            </label>
+          </div>
+        </div>
+        
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:16px 0">
+          <button type="button" class="btn" onclick="generateMaintenanceProposals()">Voorstellen Genereren</button>
+          <button type="button" class="btn primary" onclick="planAllMaintenance()">Alles Inplannen</button>
+        </div>
+        
+        <h4>Onderhoudsvoorstellen</h4>
+        <div id="maintenanceProposals"></div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Sluiten</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Login Modal -->
+  <dialog id="loginModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Inloggen bij PlanWise</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <div class="field">
+            <label>Bedrijfsnaam</label>
+            <input id="loginCompany" type="text" required placeholder="Uw bedrijfsnaam">
+          </div>
+          <div class="field">
+            <label>Gebruikersnaam</label>
+            <input id="loginUsername" type="text" required placeholder="Uw gebruikersnaam">
+          </div>
+          <div class="field">
+            <label>Wachtwoord</label>
+            <input id="loginPassword" type="password" required placeholder="Uw wachtwoord">
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin: 16px 0;">
+          <p class="muted small">Nog geen account? <a href="#" onclick="showRegisterModal()" style="color: rgb(var(--brand-1));">Registreer hier</a></p>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn primary" onclick="handleLogin()" value="ok">Inloggen</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Register Modal -->
+  <dialog id="registerModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Registreren bij PlanWise</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <div class="field">
+            <label>Bedrijfsnaam *</label>
+            <input id="regCompany" type="text" required placeholder="Uw bedrijfsnaam">
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Gebruikersnaam *</label>
+              <input id="regUsername" type="text" required placeholder="Kies een gebruikersnaam">
+            </div>
+            <div class="field">
+              <label>E-mail *</label>
+              <input id="regEmail" type="email" required placeholder="uw@email.nl">
+            </div>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Wachtwoord *</label>
+              <input id="regPassword" type="password" required placeholder="Kies een wachtwoord">
+            </div>
+            <div class="field">
+              <label>Bevestig Wachtwoord *</label>
+              <input id="regPasswordConfirm" type="password" required placeholder="Herhaal wachtwoord">
+            </div>
+          </div>
+          <div class="field">
+            <label>Branche</label>
+            <select id="regIndustry">
+              <option value="">Selecteer branche</option>
+              <option value="hvac">HVAC (Verwarming, Ventilatie, Airco)</option>
+              <option value="electrical">Elektrotechniek</option>
+              <option value="plumbing">Loodgieterswerk</option>
+              <option value="facility">Facility Management</option>
+              <option value="other">Anders</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Rol *</label>
+            <select id="regRole" required>
+              <option value="">Selecteer rol</option>
+              <option value="admin">Administrator - Volledige toegang</option>
+              <option value="planner">Planner - Planning en scheduling</option>
+              <option value="technician">Monteur - Veldwerk en werkorders</option>
+              <option value="viewer">Viewer - Alleen bekijken</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" onclick="showLoginModal()" value="cancel">Terug naar Login</button>
+        <button class="btn primary" onclick="handleRegister()" value="ok">Account Aanmaken</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Platform Settings Modal -->
+  <dialog id="platformSettingsModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Platform Instellingen</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <h4>Algemene Instellingen</h4>
+          <div class="field">
+            <label>Platform Naam</label>
+            <input id="platformName" type="text" value="PlanWise">
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Max Tenants</label>
+              <input id="maxTenants" type="number" min="1" value="100">
+            </div>
+            <div class="field">
+              <label>Trial Periode (dagen)</label>
+              <input id="trialDays" type="number" min="1" value="30">
+            </div>
+          </div>
+          
+          <h4>Feature Toggles</h4>
+          <div class="field">
+            <label><input type="checkbox" id="allowRegistration" checked> Nieuwe registraties toestaan</label>
+          </div>
+          <div class="field">
+            <label><input type="checkbox" id="enableBilling" checked> Billing module ingeschakeld</label>
+          </div>
+          <div class="field">
+            <label><input type="checkbox" id="enableAnalytics" checked> Analytics tracking</label>
+          </div>
+          
+          <h4>Maintenance Mode</h4>
+          <div class="field">
+            <label><input type="checkbox" id="maintenanceMode"> Maintenance mode actief</label>
+          </div>
+          <div class="field">
+            <label>Maintenance bericht</label>
+            <textarea id="maintenanceMessage" rows="3" placeholder="Platform is tijdelijk niet beschikbaar voor onderhoud..."></textarea>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" value="cancel">Annuleren</button>
+        <button class="btn primary" onclick="savePlatformSettings()" value="ok">Opslaan</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Tenant Detail Modal -->
+  <dialog id="tenantDetailModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3 id="tenantDetailTitle">Tenant Details</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div id="tenantDetailContent"></div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn ghost" onclick="suspendTenant()">🚫 Suspend</button>
+        <button class="btn ghost" onclick="deleteTenant()">🗑️ Delete</button>
+        <button class="btn" value="cancel">Sluiten</button>
+        <button class="btn primary" onclick="impersonateTenant()">👤 Impersonate</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Create Organization Modal -->
+  <dialog id="createOrganizationModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Nieuwe Organisatie Aanmaken</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <div class="field">
+            <label>Organisatie Naam *</label>
+            <input id="newOrgCompany" type="text" required placeholder="Naam van de organisatie">
+          </div>
+          <div class="field">
+            <label>Branche</label>
+            <select id="newOrgIndustry">
+              <option value="">Selecteer branche</option>
+              <option value="hvac">HVAC (Verwarming, Ventilatie, Airco)</option>
+              <option value="electrical">Elektrotechniek</option>
+              <option value="plumbing">Loodgieterswerk</option>
+              <option value="facility">Facility Management</option>
+              <option value="other">Anders</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Plan</label>
+            <select id="newOrgPlan">
+              <option value="trial">Trial (30 dagen gratis)</option>
+              <option value="active">Active (€49/maand)</option>
+              <option value="enterprise">Enterprise (€149/maand)</option>
+            </select>
+          </div>
+          
+          <h4>Admin Gebruiker</h4>
+          <div class="field-inline">
+            <div class="field">
+              <label>Admin Gebruikersnaam *</label>
+              <input id="newOrgAdminUsername" type="text" required placeholder="admin">
+            </div>
+            <div class="field">
+              <label>Admin E-mail *</label>
+              <input id="newOrgAdminEmail" type="email" required placeholder="admin@bedrijf.nl">
+            </div>
+          </div>
+          <div class="field">
+            <label>Admin Wachtwoord *</label>
+            <input id="newOrgAdminPassword" type="password" required placeholder="Minimaal 6 karakters">
+          </div>
+        </div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn" type="button" onclick="closeCreateOrganizationModal()">Annuleren</button>
+        <button class="btn primary" onclick="createNewOrganization()" value="ok">Organisatie Aanmaken</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Create User Modal -->
+  <dialog id="createUserModal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <h3>Nieuwe Gebruiker Aanmaken</h3>
+        <button class="icon-btn" value="cancel" aria-label="Sluiten">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="form">
+          <div class="field">
+            <label>Organisatie *</label>
+            <select id="newUserTenant" required>
+              <option value="">Selecteer organisatie</option>
+            </select>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Gebruikersnaam *</label>
+              <input id="newUserUsername" type="text" required placeholder="Unieke gebruikersnaam">
+            </div>
+            <div class="field">
+              <label>E-mail *</label>
+              <input id="newUserEmail" type="email" required placeholder="gebruiker@email.nl">
+            </div>
+          </div>
+          <div class="field-inline">
+            <div class="field">
+              <label>Wachtwoord *</label>
+              <input id="newUserPassword" type="password" required placeholder="Minimaal 6 karakters">
+            </div>
+            <div class="field">
+              <label>Rol *</label>
+              <select id="newUserRole" required>
+                <option value="">Selecteer rol</option>
+                <option value="admin">Admin</option>
+                <option value="user">User</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Notities</label>
+            <textarea id="newUserNotes" rows="2" placeholder="Aanvullende informatie over deze gebruiker..."></textarea>
+          </div>
+        </div>
+      </div>
+             <footer class="modal-foot">
+         <button class="btn" type="button" onclick="closeCreateUserModal()">Annuleren</button>
+         <button class="btn primary" onclick="createNewUser()" value="ok">Gebruiker Aanmaken</button>
+       </footer>
+    </form>
+  </dialog>
+
+  <!-- API Adapter -->
+  <script src="services/api.js?v=2025-08-14"></script>
+  
+  <!-- Scheduler Service -->
+  <script src="services/scheduler.js?v=2025-08-14"></script>
+  
+  <!-- App -->
+  <script src="app.js?v=2025-08-14"></script>
+</body>
+</html>
