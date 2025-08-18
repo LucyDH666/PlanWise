@@ -238,8 +238,17 @@ function requirePermission(permission, fallbackAction = null) {
 
 function getCurrentUserRole() {
   if (!currentAuth) return ROLES.VIEWER;
-  if (currentAuth.role === 'superadmin') return ROLES.SUPER_ADMIN;
-  return currentAuth.role || ROLES.VIEWER;
+  
+  // Map role strings to role constants
+  const roleMap = {
+    'superadmin': ROLES.SUPER_ADMIN,
+    'admin': ROLES.ADMIN,
+    'planner': ROLES.PLANNER,
+    'technician': ROLES.TECHNICIAN,
+    'viewer': ROLES.VIEWER
+  };
+  
+  return roleMap[currentAuth.role] || ROLES.VIEWER;
 }
 
 function getCurrentUserRoleInfo() {
@@ -260,6 +269,9 @@ function updateUIForRole() {
     `;
   }
   
+  // Update role display in navigation
+  updateRoleDisplay();
+  
   // Hide/show navigation based on permissions
   updateNavigationForRole();
   
@@ -268,6 +280,31 @@ function updateUIForRole() {
   
   // Update page content based on role
   updatePageContentForRole();
+}
+
+function updateRoleDisplay() {
+  const role = getCurrentUserRole();
+  const roleInfo = getCurrentUserRoleInfo();
+  
+  // Update role switcher if it exists
+  const roleSwitcher = document.getElementById('roleSwitcher');
+  if (roleSwitcher) {
+    const roleSelect = roleSwitcher.querySelector('select');
+    if (roleSelect) {
+      roleSelect.value = currentAuth?.role || 'viewer';
+    }
+  }
+  
+  // Update any role display elements
+  const roleDisplays = document.querySelectorAll('[data-role-display]');
+  roleDisplays.forEach(element => {
+    element.textContent = roleInfo.name;
+    element.style.color = roleInfo.color;
+  });
+  
+  // Update role-based styling
+  document.body.className = document.body.className.replace(/role-\w+/g, '');
+  document.body.classList.add(`role-${currentAuth?.role || 'viewer'}`);
 }
 
 function updateNavigationForRole() {
@@ -293,6 +330,30 @@ function updateNavigationForRole() {
       btn.style.display = 'block';
     }
   });
+  
+  // Special handling for Super Admin menu item
+  const superAdminBtn = document.querySelector('.nav-btn[data-route="superadmin"]');
+  if (superAdminBtn) {
+    if (role === ROLES.SUPER_ADMIN) {
+      superAdminBtn.style.display = 'block';
+      superAdminBtn.innerHTML = '🔧 Super Admin';
+    } else {
+      superAdminBtn.style.display = 'none';
+    }
+  }
+  
+  // Update account dropdown for Super Admin
+  const accountDropdown = document.getElementById('accountDropdown');
+  if (accountDropdown) {
+    const superAdminOption = accountDropdown.querySelector('[data-action="superadmin"]');
+    if (superAdminOption) {
+      if (role === ROLES.SUPER_ADMIN) {
+        superAdminOption.style.display = 'block';
+      } else {
+        superAdminOption.style.display = 'none';
+      }
+    }
+  }
 }
 
 function updateActionButtonsForRole() {
@@ -728,9 +789,14 @@ state = loadState() || seedDemo(structuredClone(defaultState));
 let calendar = null;     // FullCalendar instance
 currentRoute = "new";
 
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", async function() {
   // Apply polyfills and close any stray dialogs
   applyPolyfillsAndCloseStrayDialogs();
+  
+  // Migrate legacy state if needed
+  if (window.PlanWiseData) {
+    await window.PlanWiseData.migrateLegacyState();
+  }
   
   // Get auth state
   currentAuth = Auth.get();
@@ -741,7 +807,7 @@ document.addEventListener("DOMContentLoaded", function() {
   }
   
   // Initialize app for current auth
-  initAppFor(currentAuth);
+  await initAppFor(currentAuth);
   
   // Ensure calendar is loaded before binding event handlers
   ensureCalendarLoaded();
@@ -815,49 +881,76 @@ function openModal(modalId) {
 }
 
 // Initialize app for specific auth state
-function initAppFor(auth) {
+async function initAppFor(auth) {
   console.log("Initializing app for auth:", auth);
   
   currentAuth = auth;
   
-  // Initialize RBAC system
-  initializeRBAC();
+  // Show loader during initialization
+  if (window.PlanWiseData) {
+    window.PlanWiseData.showLoader('Initialiseren...');
+  }
   
-  // Update RBAC UI
-  updateRoleIndicator();
-  setupRoleSwitcher();
-  applyRoleBasedUI();
-  
-  // Setup account dropdown
-  setupAccountDropdown();
+  try {
+    // Initialize state using data service
+    if (window.PlanWiseData) {
+      state = await window.PlanWiseData.initializeState(auth);
+    } else {
+      // Fallback to old method
+      state = loadState() || seedDemo(structuredClone(defaultState));
+    }
+    
+    // Initialize RBAC system
+    initializeRBAC();
+    
+    // Update RBAC UI
+    updateRoleIndicator();
+    setupRoleSwitcher();
+    applyRoleBasedUI();
+    
+    // Setup account dropdown
+    setupAccountDropdown();
 
-  // Router-knoppen
-  document.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (!currentAuth) {
-        showLoginModal();
-        return;
-      }
-      go(btn.dataset.route);
+    // Router-knoppen
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (!currentAuth) {
+          showLoginModal();
+          return;
+        }
+        go(btn.dataset.route);
+      });
     });
-  });
 
-  // Inject onderhoud-knop in de nav (als ontbreekt)
-  injectMaintenanceNav();
+    // Inject onderhoud-knop in de nav (als ontbreekt)
+    injectMaintenanceNav();
 
-  // Form submit
-  const rf = document.getElementById("requestForm");
-  if(rf) rf.addEventListener("submit", onSubmitRequest);
+    // Form submit
+    const rf = document.getElementById("requestForm");
+    if(rf) rf.addEventListener("submit", onSubmitRequest);
 
-  // Instellingen knoppen
-  document.getElementById("addTechBtn")?.addEventListener("click", () => roleSafeEditTechnicians(onAddTech));
-  document.getElementById("saveSettings")?.addEventListener("click", () => roleSafeEditSettings(onSaveSettings));
+    // Instellingen knoppen
+    document.getElementById("addTechBtn")?.addEventListener("click", () => roleSafeEditTechnicians(onAddTech));
+    document.getElementById("saveSettings")?.addEventListener("click", () => roleSafeEditSettings(onSaveSettings));
 
-  // Planner-zoek
-  document.getElementById("searchInput")?.addEventListener("input", renderBoard);
+    // Planner-zoek
+    document.getElementById("searchInput")?.addEventListener("input", renderBoard);
 
-  // Init eerste route - go to dashboard by default
-  go("dashboard");
+    // Init eerste route - go to dashboard by default
+    go("dashboard");
+    
+  } catch (error) {
+    console.error('App initialization failed:', error);
+    // Show error toast
+    if (window.showErrorToast) {
+      window.showErrorToast('Initialisatie mislukt. Probeer de pagina te verversen.');
+    }
+  } finally {
+    // Hide loader
+    if (window.PlanWiseData) {
+      window.PlanWiseData.hideLoader();
+    }
+  }
 }
 
 // Ensure calendar is loaded before binding event handlers
@@ -973,18 +1066,34 @@ function toast(msg){
 }
 
 /* -------------------- STORAGE -------------------- */
-function saveState(){ 
+async function saveState(){ 
   try{ 
-    localStorage.setItem(getStorageKey(), JSON.stringify(state)); 
+    if (window.PlanWiseData) {
+      await window.PlanWiseData.saveState(state);
+    } else {
+      // Fallback to old method
+      localStorage.setItem(getStorageKey(), JSON.stringify(state)); 
+    }
   } catch(error) {
-    console.error("Failed to save state to localStorage:", error);
-    toast("⚠️ Opslaan mislukt - probeer opnieuw");
+    console.error("Failed to save state:", error);
+    if (window.showErrorToast) {
+      window.showErrorToast("⚠️ Opslaan mislukt - probeer opnieuw");
+    } else if (window.toast) {
+      window.toast("⚠️ Opslaan mislukt - probeer opnieuw");
+    }
   } 
 }
+
 function loadState(){
   try{ 
-    const raw=localStorage.getItem(getStorageKey()); 
-    return raw? JSON.parse(raw):null; 
+    if (window.PlanWiseData) {
+      // Use data service for loading
+      return window.PlanWiseData.loadState();
+    } else {
+      // Fallback to old method
+      const raw=localStorage.getItem(getStorageKey()); 
+      return raw? JSON.parse(raw):null; 
+    }
   } catch(error) {
     console.error("Failed to load state from localStorage:", error);
     return null; 
@@ -5265,6 +5374,15 @@ function showSwitchTenantModal() {
     superAdminOption.style.display = currentAuth?.role === 'superadmin' ? 'block' : 'none';
   }
   
+  // Setup modal event handlers for proper closing
+  const closeButtons = modal.querySelectorAll('button[value="cancel"], .icon-btn[value="cancel"]');
+  closeButtons.forEach(btn => {
+    btn.onclick = function(e) {
+      e.preventDefault();
+      modal.close();
+    };
+  });
+  
   // Close dropdown and show modal
   document.getElementById('accountDropdown').style.display = 'none';
   openModal('switchTenantModal');
@@ -5284,14 +5402,51 @@ function performTenantSwitch() {
   const selectedSlug = select.value;
   
   if (!selectedSlug) {
-    alert('Selecteer een organisatie');
+    // Show non-blocking toast instead of alert
+    if (window.toast) {
+      window.toast('⚠️ Selecteer een organisatie om naar te wisselen');
+    } else {
+      alert('Selecteer een organisatie');
+    }
     return;
   }
   
-  if (Auth.switchOrg(selectedSlug)) {
-    location.reload();
+  // Show loading state
+  const switchBtn = document.querySelector('#switchTenantModal button[onclick="performTenantSwitch()"]');
+  if (switchBtn) {
+    const originalText = switchBtn.textContent;
+    switchBtn.textContent = 'Wisselen...';
+    switchBtn.disabled = true;
+    
+    setTimeout(() => {
+      if (Auth.switchOrg(selectedSlug)) {
+        location.reload();
+      } else {
+        // Show error and restore button
+        if (window.showErrorToast) {
+          window.showErrorToast('Fout bij het wisselen van organisatie');
+        } else if (window.toast) {
+          window.toast('❌ Fout bij het wisselen van organisatie');
+        } else {
+          alert('Fout bij het wisselen van organisatie');
+        }
+        switchBtn.textContent = originalText;
+        switchBtn.disabled = false;
+      }
+    }, 100);
   } else {
-    alert('Fout bij het wisselen van organisatie');
+    // Fallback without loading state
+    if (Auth.switchOrg(selectedSlug)) {
+      location.reload();
+    } else {
+      if (window.showErrorToast) {
+        window.showErrorToast('Fout bij het wisselen van organisatie');
+      } else if (window.toast) {
+        window.toast('❌ Fout bij het wisselen van organisatie');
+      } else {
+        alert('Fout bij het wisselen van organisatie');
+      }
+    }
   }
 }
 
