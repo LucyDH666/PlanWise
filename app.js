@@ -93,8 +93,9 @@ function requirePermission(permission, fallbackAction = null) {
 }
 
 function getCurrentUserRole() {
-  if (isSuperAdmin) return ROLES.SUPER_ADMIN;
-  return currentUserRole || ROLES.VIEWER;
+  if (!currentAuth) return ROLES.VIEWER;
+  if (currentAuth.role === 'superadmin') return ROLES.SUPER_ADMIN;
+  return currentAuth.role || ROLES.VIEWER;
 }
 
 function getCurrentUserRoleInfo() {
@@ -265,14 +266,9 @@ function loadTechnicianTasks() {
 }
 
 function getCurrentUserName() {
-  if (isSuperAdmin) return 'Super Admin';
-  
-  // Extract username from currentUser key
-  if (currentUser && currentUser.includes('_')) {
-    return currentUser.split('_').slice(1).join('_');
-  }
-  
-  return 'Onbekend';
+  if (!currentAuth) return 'Onbekend';
+  if (currentAuth.role === 'superadmin') return 'Super Admin';
+  return currentAuth.user || 'Onbekend';
 }
 
 // Enhanced role switching functionality
@@ -287,16 +283,22 @@ function switchUserRole(newRole) {
     return;
   }
   
-  currentUserRole = newRole;
-  localStorage.setItem('planwise_current_user_role', newRole);
-  
-  updateUIForRole();
-  toast(`✅ Rol gewijzigd naar ${ROLE_PERMISSIONS[newRole].name}`);
-  
-  // Refresh current page
-  const currentRoute = document.querySelector('.route.active')?.id?.replace('route-', '');
-  if (currentRoute) {
-    go(currentRoute);
+  // Update auth state with new role
+  if (currentAuth) {
+    const newAuth = { ...currentAuth, role: newRole };
+    if (Auth.set(newAuth)) {
+      currentAuth = newAuth;
+      updateUIForRole();
+      toast(`✅ Rol gewijzigd naar ${ROLE_PERMISSIONS[newRole].name}`);
+      
+      // Refresh current page
+      const currentRoute = document.querySelector('.route.active')?.id?.replace('route-', '');
+      if (currentRoute) {
+        go(currentRoute);
+      }
+    } else {
+      toast('❌ Fout bij het wijzigen van rol');
+    }
   }
 }
 
@@ -426,28 +428,34 @@ function switchRole(newRole) {
   const roleInfo = ROLE_PERMISSIONS[newRole];
   if (!roleInfo) return;
   
-  // Update current role
-  currentUserRole = newRole;
-  localStorage.setItem('planwise_current_user_role', newRole);
-  
-  // Update UI
-  updateRoleIndicator();
-  applyRoleBasedUI();
-  
-  // Reset role switcher
-  const roleSelect = document.getElementById('roleSelect');
-  if (roleSelect) roleSelect.value = '';
-  
-  toast(`✅ Rol gewisseld naar: ${roleInfo.name}`);
-  
-  // Log role switch
-  if (window.planwiseLogger) {
-    window.planwiseLogger.info('User role switched', {
-      user: currentUser,
-      oldRole: currentUserRole,
-      newRole: newRole,
-      timestamp: new Date().toISOString()
-    });
+  // Update auth state with new role
+  if (currentAuth) {
+    const newAuth = { ...currentAuth, role: newRole };
+    if (Auth.set(newAuth)) {
+      currentAuth = newAuth;
+      
+      // Update UI
+      updateRoleIndicator();
+      applyRoleBasedUI();
+      
+      // Reset role switcher
+      const roleSelect = document.getElementById('roleSelect');
+      if (roleSelect) roleSelect.value = '';
+      
+      toast(`✅ Rol gewisseld naar: ${roleInfo.name}`);
+      
+      // Log role switch
+      if (window.planwiseLogger) {
+        window.planwiseLogger.info('User role switched', {
+          user: currentAuth.user,
+          oldRole: currentAuth.role,
+          newRole: newRole,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } else {
+      toast('❌ Fout bij het wisselen van rol');
+    }
   }
 }
 
@@ -572,9 +580,9 @@ const defaultState = {
   maintenancePlans:[]
 };
 
-let state = loadState() || seedDemo(structuredClone(defaultState));
+state = loadState() || seedDemo(structuredClone(defaultState));
 let calendar = null;     // FullCalendar instance
-let currentRoute = "new";
+currentRoute = "new";
 
 document.addEventListener("DOMContentLoaded", function() {
   // Apply polyfills and close any stray dialogs
@@ -2635,8 +2643,8 @@ function logEventChange(event, action, details = {}) {
       timestamp: new Date().toISOString(),
       event_id: event.id,
       action: action,
-      user: currentUser || 'system',
-      tenant: currentTenant || 'demo',
+      user: currentAuth?.user || 'system',
+      tenant: currentAuth?.orgSlug || 'demo',
       details: details
     };
     
@@ -3916,27 +3924,24 @@ function impersonateTenant(tenantKey) {
   }
   
   if (confirm(`Weet je zeker dat je wilt inloggen als ${tenantData.info.company}?`)) {
-    // Set tenant context
-    currentTenant = tenantKey;
-    currentUser = `${tenantKey}_${tenantData.users[0].username}`;
-    isSuperAdmin = false;
+    // Set auth state for tenant
+    const authData = {
+      orgSlug: tenantKey,
+      role: tenantData.users[0].role || 'viewer',
+      user: tenantData.users[0].username
+    };
     
-    localStorage.setItem('planwise_current_tenant', currentTenant);
-    localStorage.setItem('planwise_current_user', currentUser);
-    localStorage.setItem('planwise_super_admin', 'false');
-    
-    // Load tenant state
-    const newState = loadState() || structuredClone(defaultState);
-    newState.tenantInfo = tenantData.info;
-    state = newState;
-    
-    // Close any open modals
-    $("#tenantDetailModal").close();
-    
-    // Restart app as tenant
-    setup();
-    
-    alert(`Je bent nu ingelogd als ${tenantData.info.company}. Gebruik 'Uitloggen' om terug te keren naar Super Admin.`);
+    if (Auth.set(authData)) {
+      // Close any open modals
+      $("#tenantDetailModal").close();
+      
+      // Reload to apply new auth state
+      location.reload();
+      
+      alert(`Je bent nu ingelogd als ${tenantData.info.company}. Gebruik 'Uitloggen' om terug te keren naar Super Admin.`);
+    } else {
+      alert('Fout bij het inloggen als tenant');
+    }
   }
 }
 
@@ -4821,15 +4826,12 @@ function handleLogin() {
     alert("Fout bij inloggen");
   }
   
-  // Restart setup and go to dashboard
-  setup();
-  
   // Update RBAC UI
   updateRoleIndicator();
   setupRoleSwitcher();
   applyRoleBasedUI();
   
-  alert(`Welkom ${user.username}! Je bent ingelogd bij ${tenantData.info.company} als ${ROLE_PERMISSIONS[currentUserRole]?.name || 'Gebruiker'}.`);
+  alert(`Welkom ${user.username}! Je bent ingelogd bij ${tenantData.info.company} als ${ROLE_PERMISSIONS[user.role]?.name || 'Gebruiker'}.`);
 }
 
 function handleRegister() {
@@ -4892,14 +4894,21 @@ function handleRegister() {
   
   localStorage.setItem(`planwise_tenant_${tenantKey}`, JSON.stringify(tenantData));
   
-  // Set current tenant and user
-  currentTenant = tenantKey;
-  currentUser = `${tenantKey}_${username}`;
-  currentUserRole = role;
+  // Set auth state for new user
+  const authData = {
+    orgSlug: tenantKey,
+    role: role,
+    user: username
+  };
   
-  localStorage.setItem('planwise_current_tenant', currentTenant);
-  localStorage.setItem('planwise_current_user', currentUser);
-  localStorage.setItem('planwise_current_user_role', currentUserRole);
+  if (Auth.set(authData)) {
+    $("#registerModal").close();
+    location.reload();
+  } else {
+    alert("Fout bij het aanmaken van account");
+  }
+  
+  // Auth state is now managed by Auth service
   
   // Close modal and initialize app
   $("#registerModal").close();
@@ -6072,7 +6081,7 @@ class Logger {
       context: {
         user: getCurrentUserName(),
         role: getCurrentUserRole(),
-        tenant: currentTenant,
+        tenant: currentAuth?.orgSlug || 'demo',
         route: document.querySelector('.route.active')?.id?.replace('route-', '') || 'unknown',
         ...context
       }
@@ -6821,9 +6830,9 @@ function runHealthCheck() {
   };
   
   try {
-    authCheck.details.currentUser = currentUser || 'none';
-    authCheck.details.currentTenant = currentTenant || 'none';
-    authCheck.details.isSuperAdmin = isSuperAdmin;
+    authCheck.details.currentUser = currentAuth?.user || 'none';
+    authCheck.details.currentTenant = currentAuth?.orgSlug || 'none';
+    authCheck.details.isSuperAdmin = currentAuth?.role === 'superadmin';
     authCheck.details.currentRole = getCurrentUserRole();
   } catch (error) {
     authCheck.status = 'unhealthy';
@@ -6899,7 +6908,7 @@ function runHealthCheck() {
 
 // Auto-run health check every 5 minutes
 setInterval(() => {
-  if (currentUser) { // Only run when user is logged in
+  if (currentAuth) { // Only run when user is logged in
     const health = runHealthCheck();
     if (health.status === 'unhealthy') {
       window.planwiseLogger.warn('Health check detected issues', health);
