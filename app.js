@@ -102,26 +102,15 @@
     return false; // Don't prevent default error handling
   };
   
-  // Unhandled promise rejection handler
+  // Handle unhandled promise rejections
   window.onunhandledrejection = function(event) {
     console.error('Unhandled promise rejection:', event.reason);
-    
-    // Don't show toast for expected rejections
-    if (event.reason && (
-      event.reason.message && (
-        event.reason.message.includes('Failed to fetch') ||
-        event.reason.message.includes('NetworkError') ||
-        event.reason.message.includes('User cancelled')
-      )
-    )) {
-      return;
-    }
     
     // Show user-friendly error message
     const userMessage = 'Er is een onverwachte fout opgetreden. Probeer de pagina te verversen.';
     showErrorToast(userMessage);
     
-    // Prevent the default browser behavior (unhandledrejection event)
+    // Prevent the default browser behavior
     event.preventDefault();
   };
   
@@ -132,18 +121,63 @@
     } catch (error) {
       console.error(`Error in ${context}:`, error);
       if (fallback) {
-        try {
-          return fallback(error);
-        } catch (fallbackError) {
-          console.error(`Fallback also failed in ${context}:`, fallbackError);
-          showErrorToast('Kritieke fout opgetreden. Herlaad de pagina.');
-        }
+        return fallback(error);
       }
       return null;
     }
   };
   
-  console.log('Global error handling initialized');
+  // Make error toast globally available
+  window.showErrorToast = showErrorToast;
+  
+  // Service availability check
+  window.checkServices = function() {
+    const services = {
+      auth: typeof Auth !== 'undefined',
+      data: typeof window.PlanWiseData !== 'undefined',
+      api: typeof window.PlanWiseAPI !== 'undefined',
+      scheduler: typeof window.PlanWiseScheduler !== 'undefined'
+    };
+    
+    console.log('Service availability:', services);
+    
+    const missingServices = Object.entries(services)
+      .filter(([name, available]) => !available)
+      .map(([name]) => name);
+    
+    if (missingServices.length > 0) {
+      console.warn('Missing services:', missingServices);
+      showErrorToast(`Services niet geladen: ${missingServices.join(', ')}`);
+      return false;
+    }
+    
+    return true;
+  };
+  
+  // Initialize services with retry mechanism
+  window.initializeServices = async function() {
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      console.log(`Service initialization attempt ${attempts}/${maxAttempts}`);
+      
+      if (window.checkServices()) {
+        console.log('All services available');
+        return true;
+      }
+      
+      if (attempts < maxAttempts) {
+        console.log('Waiting for services to load...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    console.error('Failed to initialize services after', maxAttempts, 'attempts');
+    showErrorToast('Services konden niet worden geladen. Ververs de pagina.');
+    return false;
+  };
 })();
 
 /* -------------------- GLOBAL STATE -------------------- */
@@ -790,27 +824,48 @@ let calendar = null;     // FullCalendar instance
 currentRoute = "new";
 
 document.addEventListener("DOMContentLoaded", async function() {
-  // Apply polyfills and close any stray dialogs
-  applyPolyfillsAndCloseStrayDialogs();
+  console.log('PlanWise: DOM Content Loaded');
   
-  // Migrate legacy state if needed
-  if (window.PlanWiseData) {
-    await window.PlanWiseData.migrateLegacyState();
+  try {
+    // Apply polyfills and close any stray dialogs
+    applyPolyfillsAndCloseStrayDialogs();
+    
+    // Wait for services to be available
+    const servicesReady = await window.initializeServices();
+    if (!servicesReady) {
+      console.error('Services not ready, showing error state');
+      showErrorToast('PlanWise services niet beschikbaar. Ververs de pagina.');
+      return;
+    }
+    
+    // Migrate legacy state if needed
+    if (window.PlanWiseData) {
+      await window.PlanWiseData.migrateLegacyState();
+    }
+    
+    // Get auth state
+    currentAuth = Auth.get();
+    
+    if (!currentAuth) {
+      console.log('No auth state found, showing login modal');
+      showLoginModal();
+      return;
+    }
+    
+    console.log('Auth state found, initializing app');
+    
+    // Initialize app for current auth
+    await initAppFor(currentAuth);
+    
+    // Ensure calendar is loaded before binding event handlers
+    ensureCalendarLoaded();
+    
+    console.log('PlanWise initialization completed successfully');
+    
+  } catch (error) {
+    console.error('Error during PlanWise initialization:', error);
+    showErrorToast('Fout tijdens initialisatie: ' + error.message);
   }
-  
-  // Get auth state
-  currentAuth = Auth.get();
-  
-  if (!currentAuth) {
-    showLoginModal();
-    return;
-  }
-  
-  // Initialize app for current auth
-  await initAppFor(currentAuth);
-  
-  // Ensure calendar is loaded before binding event handlers
-  ensureCalendarLoaded();
 });
 
 // Register service worker for PWA functionality
@@ -896,6 +951,7 @@ async function initAppFor(auth) {
     if (window.PlanWiseData) {
       state = await window.PlanWiseData.initializeState(auth);
     } else {
+      console.warn('PlanWiseData not available, using fallback initialization');
       // Fallback to old method
       state = loadState() || seedDemo(structuredClone(defaultState));
     }
@@ -2253,119 +2309,6 @@ function showCalendarFallback() {
     `;
   }
 }
-
-function showWeekFallback() {
-  console.log("Showing week fallback");
-  const el = document.getElementById("calendar");
-  if(!el) return;
-  
-  try {
-    const events = buildCalendarEvents();
-    
-    // Get current week
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    
-    // Group events by day
-    const eventsByDay = {};
-    for(let i = 0; i < 7; i++) {
-      const day = new Date(startOfWeek);
-      day.setDate(startOfWeek.getDate() + i);
-      eventsByDay[day.toDateString()] = [];
-    }
-    
-    events.forEach(ev => {
-      try {
-        const eventDate = new Date(ev.start);
-        const dayKey = eventDate.toDateString();
-        if(eventsByDay[dayKey]) {
-          eventsByDay[dayKey].push(ev);
-        }
-      } catch (error) {
-        console.warn("Error processing event for week fallback:", ev, error);
-      }
-    });
-    
-    const dayNames = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
-    
-    let weekHTML = `
-      <div style="padding: 16px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 style="margin: 0; color: rgb(var(--txt-1));">📅 Week ${startOfWeek.toLocaleDateString('nl-NL')} - ${endOfWeek.toLocaleDateString('nl-NL')}</h3>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;">
-    `;
-    
-    for(let i = 0; i < 7; i++) {
-      const day = new Date(startOfWeek);
-      day.setDate(startOfWeek.getDate() + i);
-      const dayEvents = eventsByDay[day.toDateString()] || [];
-      const isToday = day.toDateString() === new Date().toDateString();
-      
-      weekHTML += `
-        <div style="
-          min-height: 120px; 
-          padding: 8px; 
-          background: rgba(255,255,255,0.02); 
-          border-radius: 6px;
-          ${isToday ? 'border: 2px solid rgb(var(--brand-1));' : 'border: 1px solid rgba(255,255,255,0.1);'}
-        ">
-          <div style="font-weight: 500; color: rgb(var(--txt-1)); margin-bottom: 8px;">
-            ${dayNames[i]} ${day.getDate()}
-          </div>
-          ${dayEvents.map(ev => `
-            <div onclick="showEventModal({id: '${ev.id}', title: '${ev.title.replace(/'/g, "\\'")}', extendedProps: ${JSON.stringify(ev.extendedProps).replace(/"/g, '&quot;')}, start: '${ev.start}', end: '${ev.end}'})" style="
-              font-size: 0.8em; 
-              padding: 4px 6px; 
-              margin: 2px 0; 
-              background: linear-gradient(135deg, rgba(var(--brand-1), 0.3), rgba(var(--brand-2), 0.3)); 
-              border-radius: 4px; 
-              cursor: pointer;
-              overflow: hidden;
-              white-space: nowrap;
-              text-overflow: ellipsis;
-            ">${ev.title.split(' — ')[0]}</div>
-          `).join('')}
-        </div>
-      `;
-    }
-    
-    weekHTML += `
-        </div>
-        <p style="color: rgb(var(--txt-2)); font-size: 0.85em; margin: 16px 0 0 0; text-align: center;">
-          📅 Week weergave (fallback) • Klik op afspraken voor details
-        </p>
-      </div>
-    `;
-    
-    el.innerHTML = weekHTML;
-    
-  } catch (error) {
-    console.error("Error in showWeekFallback:", error);
-    showCalendarFallback(); // Fallback to month view
-  }
-}
-
-// Calendar navigation
-let fallbackCalendarDate = new Date();
-window.changeCalendarMonth = function(delta) {
-  fallbackCalendarDate.setMonth(fallbackCalendarDate.getMonth() + delta);
-  const currentView = $("#dashView")?.value;
-  if(currentView === "timeGridWeek" || currentView === "Week") {
-    showWeekFallback();
-  } else {
-    showCalendarFallback();
-  }
-};
-
-window.changeCalendarWeek = function(delta) {
-  fallbackCalendarDate.setDate(fallbackCalendarDate.getDate() + (delta * 7));
-  showWeekFallback();
-};
 
 function showWeekFallback() {
   console.log("Toon week fallback");
@@ -5160,17 +5103,71 @@ function exportBillingData() {
 /* -------------------- AUTHENTICATION & TENANT MANAGEMENT -------------------- */
 
 function showLoginModal() {
-  // Populate available organizations for autocomplete
-  populateAvailableOrganizations();
+  try {
+    // Populate available organizations for autocomplete
+    populateAvailableOrganizations();
+    
+    // Clear any previous errors
+    clearLoginError();
+    
+    // Use enhanced modal opening
+    openModal('loginModal');
+    
+    // Setup slug help functionality
+    setupSlugHelp();
+  } catch (error) {
+    console.error("Error showing login modal:", error);
+    createFallbackLoginModal();
+  }
+}
+
+function createFallbackLoginModal() {
+  // Remove existing fallback if present
+  const existingFallback = document.getElementById('fallbackLoginModal');
+  if (existingFallback) {
+    existingFallback.remove();
+  }
   
-  // Clear any previous errors
-  clearLoginError();
+  const fallbackModal = document.createElement('div');
+  fallbackModal.id = 'fallbackLoginModal';
+  fallbackModal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
   
-  // Use enhanced modal opening
-  openModal('loginModal');
+  fallbackModal.innerHTML = `
+    <div style="
+      background: rgb(var(--bg-1));
+      border: 1px solid rgba(var(--border), 0.3);
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 400px;
+      width: 90%;
+      text-align: center;
+    ">
+      <h2 style="margin: 0 0 16px 0; color: rgb(var(--txt-1));">PlanWise Login</h2>
+      <p style="margin: 0 0 24px 0; color: rgb(var(--txt-2));">Er is een probleem met de login modal. Probeer de pagina te verversen.</p>
+      <button onclick="location.reload()" style="
+        background: rgb(var(--brand-1));
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+      ">Pagina Verversen</button>
+    </div>
+  `;
   
-  // Setup slug help functionality
-  setupSlugHelp();
+  document.body.appendChild(fallbackModal);
 }
 
 function showRegisterModal() {
@@ -6661,151 +6658,6 @@ const LogLevel = {
 // Version: 4.0.0
 // Last Updated: 2024-12-19
 
-// Global Error Handling - Ensure UI remains functional after errors
-(function() {
-  // Toast notification system for errors
-  function showErrorToast(message, duration = 5000) {
-    // Remove existing error toasts
-    const existingToasts = document.querySelectorAll('.error-toast');
-    existingToasts.forEach(toast => toast.remove());
-    
-    // Create toast element
-    const toast = document.createElement('div');
-    toast.className = 'error-toast';
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #ef4444;
-      color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 10000;
-      max-width: 400px;
-      font-size: 14px;
-      line-height: 1.4;
-      animation: slideIn 0.3s ease-out;
-    `;
-    
-    // Add animation styles if not already present
-    if (!document.querySelector('#error-toast-styles')) {
-      const style = document.createElement('style');
-      style.id = 'error-toast-styles';
-      style.textContent = `
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes slideOut {
-          from { transform: translateX(0); opacity: 1; }
-          to { transform: translateX(100%); opacity: 0; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    // Auto-remove after duration
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.style.animation = 'slideOut 0.3s ease-in';
-        setTimeout(() => toast.remove(), 300);
-      }
-    }, duration);
-    
-    // Click to dismiss
-    toast.addEventListener('click', () => {
-      toast.style.animation = 'slideOut 0.3s ease-in';
-      setTimeout(() => toast.remove(), 300);
-    });
-  }
-  
-  // Global error handler
-  window.onerror = function(message, source, lineno, colno, error) {
-    console.error('Global error caught:', { message, source, lineno, colno, error });
-    
-    // Don't show toast for expected errors (like network failures)
-    if (message && (
-      message.includes('Failed to fetch') ||
-      message.includes('NetworkError') ||
-      message.includes('ResizeObserver loop limit exceeded') ||
-      message.includes('Script error')
-    )) {
-      return false; // Don't prevent default handling
-    }
-    
-    // Show user-friendly error message
-    const userMessage = 'Er is een fout opgetreden. Probeer de pagina te verversen of neem contact op met de beheerder.';
-    showErrorToast(userMessage);
-    
-    // Ensure login modal can still be opened
-    if (typeof showLoginModal === 'function') {
-      // Add a small delay to ensure the error doesn't interfere
-      setTimeout(() => {
-        try {
-          // Check if we can still access the login modal
-          const loginModal = document.getElementById('loginModal');
-          if (loginModal && typeof openModal === 'function') {
-            console.log('Login modal is still accessible after error');
-          }
-        } catch (e) {
-          console.warn('Could not verify login modal accessibility:', e);
-        }
-      }, 100);
-    }
-    
-    return false; // Don't prevent default error handling
-  };
-  
-  // Unhandled promise rejection handler
-  window.onunhandledrejection = function(event) {
-    console.error('Unhandled promise rejection:', event.reason);
-    
-    // Don't show toast for expected rejections
-    if (event.reason && (
-      event.reason.message && (
-        event.reason.message.includes('Failed to fetch') ||
-        event.reason.message.includes('NetworkError') ||
-        event.reason.message.includes('User cancelled')
-      )
-    )) {
-      return;
-    }
-    
-    // Show user-friendly error message
-    const userMessage = 'Er is een onverwachte fout opgetreden. Probeer de pagina te verversen.';
-    showErrorToast(userMessage);
-    
-    // Prevent the default browser behavior (unhandledrejection event)
-    event.preventDefault();
-  };
-  
-  // Add error boundary for critical functions
-  window.safeExecute = function(fn, fallback, context = 'unknown') {
-    try {
-      return fn();
-    } catch (error) {
-      console.error(`Error in ${context}:`, error);
-      if (fallback) {
-        try {
-          return fallback(error);
-        } catch (fallbackError) {
-          console.error(`Fallback also failed in ${context}:`, fallbackError);
-          showErrorToast('Kritieke fout opgetreden. Herlaad de pagina.');
-        }
-      }
-      return null;
-    }
-  };
-  
-  console.log('Global error handling initialized');
-})();
-
-// ... rest of the code ...
-
 // Health check function
 function runHealthCheck() {
   console.log('🏥 Running PlanWise health check...');
@@ -7357,6 +7209,199 @@ function cacheTechnicianData(data) {
     });
   }
 }
+
+// Health check function
+window.runPlanwiseHealthCheck = function() {
+  console.log('🔍 PlanWise Health Check Starting...');
+  
+  const health = {
+    services: {},
+    auth: {},
+    data: {},
+    ui: {},
+    errors: []
+  };
+  
+  // Check services
+  health.services.auth = typeof Auth !== 'undefined';
+  health.services.data = typeof window.PlanWiseData !== 'undefined';
+  health.services.api = typeof window.PlanWiseAPI !== 'undefined';
+  health.services.scheduler = typeof window.PlanWiseScheduler !== 'undefined';
+  
+  // Check auth state
+  try {
+    health.auth.current = Auth.get();
+    health.auth.valid = !!health.auth.current;
+  } catch (error) {
+    health.auth.error = error.message;
+    health.errors.push('Auth error: ' + error.message);
+  }
+  
+  // Check data state
+  try {
+    health.data.state = typeof state !== 'undefined';
+    health.data.loaded = !!state;
+    health.data.technicians = state?.technicians?.length || 0;
+    health.data.events = state?.calendarEvents?.length || 0;
+  } catch (error) {
+    health.data.error = error.message;
+    health.errors.push('Data error: ' + error.message);
+  }
+  
+  // Check UI elements
+  try {
+    health.ui.loginModal = !!document.getElementById('loginModal');
+    health.ui.calendar = !!document.getElementById('calendar');
+    health.ui.navigation = !!document.querySelector('.nav');
+  } catch (error) {
+    health.ui.error = error.message;
+    health.errors.push('UI error: ' + error.message);
+  }
+  
+  // Check localStorage
+  try {
+    const keys = Object.keys(localStorage).filter(key => key.startsWith('planwise_'));
+    health.storage = {
+      keys: keys.length,
+      total: localStorage.length
+    };
+  } catch (error) {
+    health.storage = { error: error.message };
+    health.errors.push('Storage error: ' + error.message);
+  }
+  
+  console.log('🔍 Health Check Results:', health);
+  
+  if (health.errors.length > 0) {
+    console.error('❌ Health Check Failed:', health.errors);
+    showErrorToast('Health check gevonden problemen: ' + health.errors.join(', '));
+  } else {
+    console.log('✅ Health Check Passed');
+    toast('✅ Health check geslaagd');
+  }
+  
+  return health;
+};
+
+// Comprehensive test function
+window.runPlanwiseTests = function() {
+  console.log('🧪 PlanWise Tests Starting...');
+  
+  const results = {
+    passed: 0,
+    failed: 0,
+    tests: []
+  };
+  
+  // Test 1: Service availability
+  try {
+    const servicesAvailable = window.checkServices();
+    results.tests.push({
+      name: 'Service Availability',
+      passed: servicesAvailable,
+      message: servicesAvailable ? 'All services loaded' : 'Some services missing'
+    });
+    if (servicesAvailable) results.passed++; else results.failed++;
+  } catch (error) {
+    results.tests.push({
+      name: 'Service Availability',
+      passed: false,
+      message: 'Error: ' + error.message
+    });
+    results.failed++;
+  }
+  
+  // Test 2: Auth functionality
+  try {
+    const auth = Auth.get();
+    const authWorks = typeof auth === 'object' || auth === null;
+    results.tests.push({
+      name: 'Auth Service',
+      passed: authWorks,
+      message: authWorks ? 'Auth service working' : 'Auth service failed'
+    });
+    if (authWorks) results.passed++; else results.failed++;
+  } catch (error) {
+    results.tests.push({
+      name: 'Auth Service',
+      passed: false,
+      message: 'Error: ' + error.message
+    });
+    results.failed++;
+  }
+  
+  // Test 3: Data service
+  try {
+    const dataWorks = typeof window.PlanWiseData !== 'undefined';
+    results.tests.push({
+      name: 'Data Service',
+      passed: dataWorks,
+      message: dataWorks ? 'Data service available' : 'Data service missing'
+    });
+    if (dataWorks) results.passed++; else results.failed++;
+  } catch (error) {
+    results.tests.push({
+      name: 'Data Service',
+      passed: false,
+      message: 'Error: ' + error.message
+    });
+    results.failed++;
+  }
+  
+  // Test 4: UI elements
+  try {
+    const loginModal = document.getElementById('loginModal');
+    const calendar = document.getElementById('calendar');
+    const navigation = document.querySelector('.nav');
+    
+    const uiWorks = !!(loginModal || calendar || navigation);
+    results.tests.push({
+      name: 'UI Elements',
+      passed: uiWorks,
+      message: uiWorks ? 'UI elements found' : 'UI elements missing'
+    });
+    if (uiWorks) results.passed++; else results.failed++;
+  } catch (error) {
+    results.tests.push({
+      name: 'UI Elements',
+      passed: false,
+      message: 'Error: ' + error.message
+    });
+    results.failed++;
+  }
+  
+  // Test 5: LocalStorage
+  try {
+    const storageWorks = typeof localStorage !== 'undefined';
+    results.tests.push({
+      name: 'LocalStorage',
+      passed: storageWorks,
+      message: storageWorks ? 'LocalStorage available' : 'LocalStorage not available'
+    });
+    if (storageWorks) results.passed++; else results.failed++;
+  } catch (error) {
+    results.tests.push({
+      name: 'LocalStorage',
+      passed: false,
+      message: 'Error: ' + error.message
+    });
+    results.failed++;
+  }
+  
+  console.log('🧪 Test Results:', results);
+  
+  // Show results
+  const message = `Tests: ${results.passed} passed, ${results.failed} failed`;
+  if (results.failed === 0) {
+    console.log('✅ All tests passed!');
+    toast('✅ Alle tests geslaagd!');
+  } else {
+    console.error('❌ Some tests failed');
+    showErrorToast(`Tests: ${results.passed} geslaagd, ${results.failed} gefaald`);
+  }
+  
+  return results;
+};
 
 // Console helpers for development
 console.log(`
