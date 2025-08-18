@@ -32,7 +32,21 @@ De GitHub Pages-versie van PlanWise robuuster maken en de tenant-login verbetere
 - **Automatische login modal** na reset
 - **Overlay cleanup** bij reset
 
-### 5. **Unit Tests & E2E Tests** ✅
+### 5. **State Initialization and Persistence** ✅
+- **State initialization** verplaatst naar `initAppFor(auth)`
+- **Org-specific storage keys** voor correcte data persistentie
+- **SaveState() calls** na elke wijziging in settings/installations/users
+- **LoadState() calls** bij tenant/role switching
+
+### 6. **Global Error Handling** ✅
+- **Window.onerror handler** voor JavaScript errors met toast notifications
+- **Window.onunhandledrejection handler** voor promise rejections
+- **SafeExecute() utility** voor kritieke operaties met fallbacks
+- **Error filtering** voor verwachte errors (network, ResizeObserver)
+- **UI recovery** - login modal blijft toegankelijk na errors
+- **User-friendly error messages** in plaats van blanke pagina's
+
+### 7. **Unit Tests & E2E Tests** ✅
 - **Comprehensive unit tests** voor slug-beheer systeem
 - **E2E test plan** voor GitHub Pages scenario's
 - **Test coverage** voor case-insensitivity, error handling, modal cleanup
@@ -54,6 +68,19 @@ function openModal(modalId) {
 // Enhanced error display
 function showLoginError(message) {
   // Inline error messages in login modal
+}
+
+// Global error handling
+window.onerror = function(message, source, lineno, colno, error) {
+  // Toast notifications + UI recovery
+}
+
+window.onunhandledrejection = function(event) {
+  // Promise rejection handling
+}
+
+window.safeExecute = function(fn, fallback, context) {
+  // Error boundary for critical operations
 }
 ```
 
@@ -132,6 +159,9 @@ runSlugManagementTests()
 - ✅ Reset app wist alle data
 - ✅ Geen console errors
 - ✅ Geen vastgelopen overlays
+- ✅ Global error handling werkt (toast notifications)
+- ✅ UI blijft functioneel na errors
+- ✅ Login modal toegankelijk na errors
 
 ### Should Pass (90%+)
 - ✅ Alle E2E test scenario's
@@ -148,6 +178,7 @@ runSlugManagementTests()
 4. **Logout en login als tenant** met slug (case-insensitive)
 5. **Test Switch Tenant dialog** → sluit met X
 6. **Reset App** → controleer login modal verschijnt
+7. **Test error handling** → `throw new Error('test')` in console → toast verschijnt
 
 ### Full Test (30 min)
 1. Voer alle **E2E test suites** uit

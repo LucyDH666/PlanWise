@@ -249,6 +249,104 @@ function runSlugManagementTests() {
     });
   });
   
+  // Test 9: Global error handling
+  test('Global error handling functionality', () => {
+    // Mock DOM elements for error toast
+    const originalQuerySelector = document.querySelector;
+    const originalCreateElement = document.createElement;
+    const originalAppendChild = document.body.appendChild;
+    
+    let toastCreated = false;
+    let toastMessage = '';
+    
+    // Mock document methods
+    document.querySelector = function(selector) {
+      if (selector === '.error-toast') return null;
+      if (selector === '#error-toast-styles') return null;
+      return originalQuerySelector.call(document, selector);
+    };
+    
+    document.createElement = function(tagName) {
+      if (tagName === 'div') {
+        toastCreated = true;
+        return {
+          className: '',
+          style: { cssText: '' },
+          textContent: '',
+          addEventListener: function() {},
+          parentNode: { removeChild: function() {} }
+        };
+      }
+      if (tagName === 'style') {
+        return {
+          id: '',
+          textContent: '',
+          parentNode: { appendChild: function() {} }
+        };
+      }
+      return originalCreateElement.call(document, tagName);
+    };
+    
+    document.body.appendChild = function(element) {
+      if (element.className === 'error-toast') {
+        toastMessage = element.textContent;
+      }
+      return originalAppendChild.call(document.body, element);
+    };
+    
+    // Test window.onerror handler
+    if (typeof window.onerror === 'function') {
+      const errorResult = window.onerror('Test error message', 'test.js', 1, 1, new Error('Test error'));
+      if (errorResult !== false) {
+        throw new Error('onerror should return false to allow default handling');
+      }
+    }
+    
+    // Test window.onunhandledrejection handler
+    if (typeof window.onunhandledrejection === 'function') {
+      const event = { reason: new Error('Test rejection'), preventDefault: function() {} };
+      window.onunhandledrejection(event);
+    }
+    
+    // Test safeExecute utility
+    if (typeof window.safeExecute === 'function') {
+      // Test with failing function
+      const result1 = window.safeExecute(
+        () => { throw new Error('Test error'); },
+        null,
+        'test-context'
+      );
+      if (result1 !== null) {
+        throw new Error('safeExecute should return null for failing function');
+      }
+      
+      // Test with fallback
+      const result2 = window.safeExecute(
+        () => { throw new Error('Test error'); },
+        () => 'fallback result',
+        'test-context'
+      );
+      if (result2 !== 'fallback result') {
+        throw new Error('safeExecute should return fallback result');
+      }
+      
+      // Test with successful function
+      const result3 = window.safeExecute(
+        () => 'success result',
+        null,
+        'test-context'
+      );
+      if (result3 !== 'success result') {
+        throw new Error('safeExecute should return function result');
+      }
+    }
+    
+    // Restore original methods
+    document.querySelector = originalQuerySelector;
+    document.createElement = originalCreateElement;
+    document.body.appendChild = originalAppendChild;
+  });
+  
   // Test results
   console.log(`\n📊 Test Results:`);
   console.log(`✅ Passed: ${testsPassed}`);

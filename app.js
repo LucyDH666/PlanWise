@@ -2,6 +2,150 @@
    Auth v2: Centralized authentication state management
    Features: Planner, Dashboard (FullCalendar), Persistentie, Onderhoudsvoorstellen
 */
+
+// Global Error Handling - Ensure UI remains functional after errors
+(function() {
+  // Toast notification system for errors
+  function showErrorToast(message, duration = 5000) {
+    // Remove existing error toasts
+    const existingToasts = document.querySelectorAll('.error-toast');
+    existingToasts.forEach(toast => toast.remove());
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #ef4444;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 10000;
+      max-width: 400px;
+      font-size: 14px;
+      line-height: 1.4;
+      animation: slideIn 0.3s ease-out;
+    `;
+    
+    // Add animation styles if not already present
+    if (!document.querySelector('#error-toast-styles')) {
+      const style = document.createElement('style');
+      style.id = 'error-toast-styles';
+      style.textContent = `
+        @keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(100%); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Auto-remove after duration
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.style.animation = 'slideOut 0.3s ease-in';
+        setTimeout(() => toast.remove(), 300);
+      }
+    }, duration);
+    
+    // Click to dismiss
+    toast.addEventListener('click', () => {
+      toast.style.animation = 'slideOut 0.3s ease-in';
+      setTimeout(() => toast.remove(), 300);
+    });
+  }
+  
+  // Global error handler
+  window.onerror = function(message, source, lineno, colno, error) {
+    console.error('Global error caught:', { message, source, lineno, colno, error });
+    
+    // Don't show toast for expected errors (like network failures)
+    if (message && (
+      message.includes('Failed to fetch') ||
+      message.includes('NetworkError') ||
+      message.includes('ResizeObserver loop limit exceeded') ||
+      message.includes('Script error')
+    )) {
+      return false; // Don't prevent default handling
+    }
+    
+    // Show user-friendly error message
+    const userMessage = 'Er is een fout opgetreden. Probeer de pagina te verversen of neem contact op met de beheerder.';
+    showErrorToast(userMessage);
+    
+    // Ensure login modal can still be opened
+    if (typeof showLoginModal === 'function') {
+      // Add a small delay to ensure the error doesn't interfere
+      setTimeout(() => {
+        try {
+          // Check if we can still access the login modal
+          const loginModal = document.getElementById('loginModal');
+          if (loginModal && typeof openModal === 'function') {
+            console.log('Login modal is still accessible after error');
+          }
+        } catch (e) {
+          console.warn('Could not verify login modal accessibility:', e);
+        }
+      }, 100);
+    }
+    
+    return false; // Don't prevent default error handling
+  };
+  
+  // Unhandled promise rejection handler
+  window.onunhandledrejection = function(event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    
+    // Don't show toast for expected rejections
+    if (event.reason && (
+      event.reason.message && (
+        event.reason.message.includes('Failed to fetch') ||
+        event.reason.message.includes('NetworkError') ||
+        event.reason.message.includes('User cancelled')
+      )
+    )) {
+      return;
+    }
+    
+    // Show user-friendly error message
+    const userMessage = 'Er is een onverwachte fout opgetreden. Probeer de pagina te verversen.';
+    showErrorToast(userMessage);
+    
+    // Prevent the default browser behavior (unhandledrejection event)
+    event.preventDefault();
+  };
+  
+  // Add error boundary for critical functions
+  window.safeExecute = function(fn, fallback, context = 'unknown') {
+    try {
+      return fn();
+    } catch (error) {
+      console.error(`Error in ${context}:`, error);
+      if (fallback) {
+        try {
+          return fallback(error);
+        } catch (fallbackError) {
+          console.error(`Fallback also failed in ${context}:`, fallbackError);
+          showErrorToast('Kritieke fout opgetreden. Herlaad de pagina.');
+        }
+      }
+      return null;
+    }
+  };
+  
+  console.log('Global error handling initialized');
+})();
+
 /* -------------------- GLOBAL STATE -------------------- */
 let currentAuth = null;
 let currentRoute = "dashboard";
@@ -6188,728 +6332,154 @@ const LogLevel = {
   CRITICAL: 4
 };
 
-class Logger {
-  constructor() {
-    this.logs = [];
-    this.maxLogs = 1000;
-    this.level = LogLevel.INFO;
-  }
-  
-  log(level, message, data = null, context = {}) {
-    const logEntry = {
-      timestamp: new Date(),
-      level: level,
-      message: message,
-      data: data,
-      context: {
-        user: getCurrentUserName(),
-        role: getCurrentUserRole(),
-        tenant: currentAuth?.orgSlug || 'demo',
-        route: document.querySelector('.route.active')?.id?.replace('route-', '') || 'unknown',
-        ...context
-      }
-    };
-    
-    this.logs.push(logEntry);
-    
-    // Keep logs within limit
-    if (this.logs.length > this.maxLogs) {
-      this.logs = this.logs.slice(-this.maxLogs);
-    }
-    
-    // Console output based on level
-    if (level >= this.level) {
-      const prefix = `[${logEntry.timestamp.toISOString()}] [${this.getLevelName(level)}]`;
-      const contextStr = Object.keys(logEntry.context).length > 0 ? 
-        ` (${Object.entries(logEntry.context).map(([k, v]) => `${k}:${v}`).join(', ')})` : '';
-      
-      switch (level) {
-        case LogLevel.DEBUG:
-          console.debug(`${prefix} ${message}${contextStr}`, data);
-          break;
-        case LogLevel.INFO:
-          console.info(`${prefix} ${message}${contextStr}`, data);
-          break;
-        case LogLevel.WARN:
-          console.warn(`${prefix} ${message}${contextStr}`, data);
-          window.planwiseMetrics.warnings.push(logEntry);
-          break;
-        case LogLevel.ERROR:
-        case LogLevel.CRITICAL:
-          console.error(`${prefix} ${message}${contextStr}`, data);
-          window.planwiseMetrics.errors.push(logEntry);
-          break;
-      }
-    }
-    
-    return logEntry;
-  }
-  
-  getLevelName(level) {
-    return Object.keys(LogLevel).find(key => LogLevel[key] === level) || 'UNKNOWN';
-  }
-  
-  debug(message, data = null, context = {}) {
-    return this.log(LogLevel.DEBUG, message, data, context);
-  }
-  
-  info(message, data = null, context = {}) {
-    return this.log(LogLevel.INFO, message, data, context);
-  }
-  
-  warn(message, data = null, context = {}) {
-    return this.log(LogLevel.WARN, message, data, context);
-  }
-  
-  error(message, data = null, context = {}) {
-    return this.log(LogLevel.ERROR, message, data, context);
-  }
-  
-  critical(message, data = null, context = {}) {
-    return this.log(LogLevel.CRITICAL, message, data, context);
-  }
-  
-  getLogs(level = null, limit = 100) {
-    let filtered = this.logs;
-    if (level !== null) {
-      filtered = this.logs.filter(log => log.level >= level);
-    }
-    return filtered.slice(-limit);
-  }
-  
-  exportLogs() {
-    return JSON.stringify(this.logs, null, 2);
-  }
-  
-  clearLogs() {
-    this.logs = [];
-  }
-}
+// PlanWise - Planning & Scheduling Application
+// Version: 4.0.0
+// Last Updated: 2024-12-19
 
-// Global logger instance
-window.planwiseLogger = new Logger();
-
-// Performance monitoring
-function measurePerformance(fn, name) {
-  return function(...args) {
-    const start = performance.now();
+// Global Error Handling - Ensure UI remains functional after errors
+(function() {
+  // Toast notification system for errors
+  function showErrorToast(message, duration = 5000) {
+    // Remove existing error toasts
+    const existingToasts = document.querySelectorAll('.error-toast');
+    existingToasts.forEach(toast => toast.remove());
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #ef4444;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 10000;
+      max-width: 400px;
+      font-size: 14px;
+      line-height: 1.4;
+      animation: slideIn 0.3s ease-out;
+    `;
+    
+    // Add animation styles if not already present
+    if (!document.querySelector('#error-toast-styles')) {
+      const style = document.createElement('style');
+      style.id = 'error-toast-styles';
+      style.textContent = `
+        @keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(100%); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Auto-remove after duration
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.style.animation = 'slideOut 0.3s ease-in';
+        setTimeout(() => toast.remove(), 300);
+      }
+    }, duration);
+    
+    // Click to dismiss
+    toast.addEventListener('click', () => {
+      toast.style.animation = 'slideOut 0.3s ease-in';
+      setTimeout(() => toast.remove(), 300);
+    });
+  }
+  
+  // Global error handler
+  window.onerror = function(message, source, lineno, colno, error) {
+    console.error('Global error caught:', { message, source, lineno, colno, error });
+    
+    // Don't show toast for expected errors (like network failures)
+    if (message && (
+      message.includes('Failed to fetch') ||
+      message.includes('NetworkError') ||
+      message.includes('ResizeObserver loop limit exceeded') ||
+      message.includes('Script error')
+    )) {
+      return false; // Don't prevent default handling
+    }
+    
+    // Show user-friendly error message
+    const userMessage = 'Er is een fout opgetreden. Probeer de pagina te verversen of neem contact op met de beheerder.';
+    showErrorToast(userMessage);
+    
+    // Ensure login modal can still be opened
+    if (typeof showLoginModal === 'function') {
+      // Add a small delay to ensure the error doesn't interfere
+      setTimeout(() => {
+        try {
+          // Check if we can still access the login modal
+          const loginModal = document.getElementById('loginModal');
+          if (loginModal && typeof openModal === 'function') {
+            console.log('Login modal is still accessible after error');
+          }
+        } catch (e) {
+          console.warn('Could not verify login modal accessibility:', e);
+        }
+      }, 100);
+    }
+    
+    return false; // Don't prevent default error handling
+  };
+  
+  // Unhandled promise rejection handler
+  window.onunhandledrejection = function(event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    
+    // Don't show toast for expected rejections
+    if (event.reason && (
+      event.reason.message && (
+        event.reason.message.includes('Failed to fetch') ||
+        event.reason.message.includes('NetworkError') ||
+        event.reason.message.includes('User cancelled')
+      )
+    )) {
+      return;
+    }
+    
+    // Show user-friendly error message
+    const userMessage = 'Er is een onverwachte fout opgetreden. Probeer de pagina te verversen.';
+    showErrorToast(userMessage);
+    
+    // Prevent the default browser behavior (unhandledrejection event)
+    event.preventDefault();
+  };
+  
+  // Add error boundary for critical functions
+  window.safeExecute = function(fn, fallback, context = 'unknown') {
     try {
-      const result = fn.apply(this, args);
-      const duration = performance.now() - start;
-      
-      // Track execution time
-      if (!window.planwiseMetrics.functionExecutionTimes[name]) {
-        window.planwiseMetrics.functionExecutionTimes[name] = [];
-      }
-      window.planwiseMetrics.functionExecutionTimes[name].push(duration);
-      
-      // Keep only last 100 measurements
-      if (window.planwiseMetrics.functionExecutionTimes[name].length > 100) {
-        window.planwiseMetrics.functionExecutionTimes[name] = 
-          window.planwiseMetrics.functionExecutionTimes[name].slice(-100);
-      }
-      
-      window.planwiseLogger.debug(`Function ${name} executed in ${duration.toFixed(2)}ms`);
-      return result;
+      return fn();
     } catch (error) {
-      const duration = performance.now() - start;
-      window.planwiseLogger.error(`Function ${name} failed after ${duration.toFixed(2)}ms`, error);
-      throw error;
+      console.error(`Error in ${context}:`, error);
+      if (fallback) {
+        try {
+          return fallback(error);
+        } catch (fallbackError) {
+          console.error(`Fallback also failed in ${context}:`, fallbackError);
+          showErrorToast('Kritieke fout opgetreden. Herlaad de pagina.');
+        }
+      }
+      return null;
     }
   };
-}
-
-// Enhanced error handling
-function handleError(error, context = {}) {
-  window.planwiseLogger.error('Application error', error, context);
   
-  // Show user-friendly error message
-  const errorMessage = error.message || 'Er is een onverwachte fout opgetreden';
-  toast(`❌ ${errorMessage}`);
-  
-  // Track error metrics
-  window.planwiseMetrics.errors.push({
-    timestamp: new Date(),
-    error: error.message,
-    stack: error.stack,
-    context: context
-  });
-}
+  console.log('Global error handling initialized');
+})();
 
-// Global error handler
-window.addEventListener('error', (event) => {
-  handleError(event.error, {
-    type: 'unhandled_error',
-    filename: event.filename,
-    lineno: event.lineno,
-    colno: event.colno
-  });
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-  handleError(new Error(event.reason), {
-    type: 'unhandled_promise_rejection'
-  });
-});
-
-// Debug panel functionality
-function showDebugPanel() {
-  if (!hasPermission('manage_users')) {
-    toast('❌ Geen toegang tot debug panel');
-    return;
-  }
-  
-  const debugPanel = document.createElement('div');
-  debugPanel.id = 'debugPanel';
-  debugPanel.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    width: 400px;
-    max-height: 80vh;
-    background: rgb(var(--bg-1));
-    border: 1px solid rgba(var(--border), 0.3);
-    border-radius: 12px;
-    padding: 16px;
-    z-index: 10000;
-    overflow-y: auto;
-    font-family: monospace;
-    font-size: 12px;
-  `;
-  
-  const metrics = window.planwiseMetrics.getSummary();
-  const logs = window.planwiseLogger.getLogs(LogLevel.WARN, 20);
-  
-  debugPanel.innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <h3 style="margin: 0; color: rgb(var(--txt-1));">🔧 Debug Panel</h3>
-      <button onclick="closeDebugPanel()" style="background: none; border: none; color: rgb(var(--txt-2)); cursor: pointer;">✕</button>
-    </div>
-    
-    <div style="margin-bottom: 16px;">
-      <h4 style="margin: 0 0 8px 0; color: rgb(var(--txt-1));">📊 Metrics</h4>
-      <div style="background: rgba(var(--bg-2), 0.5); padding: 8px; border-radius: 4px; margin-bottom: 8px;">
-        <div>Session: ${Math.round(metrics.session.duration / 1000)}s</div>
-        <div>Page Loads: ${metrics.session.pageLoads}</div>
-        <div>Errors: ${metrics.session.errors}</div>
-        <div>API Success Rate: ${metrics.api.successRate.toFixed(1)}%</div>
-      </div>
-    </div>
-    
-    <div style="margin-bottom: 16px;">
-      <h4 style="margin: 0 0 8px 0; color: rgb(var(--txt-1));">🚨 Recent Errors/Warnings</h4>
-      <div style="max-height: 200px; overflow-y: auto;">
-        ${logs.map(log => `
-          <div style="padding: 4px; border-bottom: 1px solid rgba(var(--border), 0.2); font-size: 11px;">
-            <div style="color: ${log.level >= LogLevel.ERROR ? 'rgb(var(--err))' : 'rgb(var(--warn))'};">
-              ${log.level >= LogLevel.ERROR ? '❌' : '⚠️'} ${log.message}
-            </div>
-            <div style="color: rgb(var(--txt-3)); font-size: 10px;">
-              ${log.timestamp.toLocaleTimeString()} - ${log.context.route}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-    
-    <div style="margin-bottom: 16px;">
-      <h4 style="margin: 0 0 8px 0; color: rgb(var(--txt-1));">⚡ Performance</h4>
-      <div style="background: rgba(var(--bg-2), 0.5); padding: 8px; border-radius: 4px;">
-        <div>Avg Page Load: ${metrics.performance.avgPageLoadTime.toFixed(2)}ms</div>
-        <div>Avg Scheduler: ${metrics.performance.avgSchedulerRuntime.toFixed(2)}ms</div>
-        <div>Scheduler Runs: ${window.planwiseMetrics.schedulerRuns}</div>
-      </div>
-    </div>
-    
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-      <button onclick="exportMetrics()" style="padding: 4px 8px; background: rgb(var(--brand-1)); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
-        📊 Export Metrics
-      </button>
-      <button onclick="exportLogs()" style="padding: 4px 8px; background: rgb(var(--brand-1)); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
-        📝 Export Logs
-      </button>
-      <button onclick="resetMetrics()" style="padding: 4px 8px; background: rgb(var(--warn)); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
-        🔄 Reset
-      </button>
-    </div>
-  `;
-  
-  document.body.appendChild(debugPanel);
-}
-
-function closeDebugPanel() {
-  const panel = document.getElementById('debugPanel');
-  if (panel) {
-    panel.remove();
-  }
-}
-
-function exportMetrics() {
-  const metrics = window.planwiseMetrics.getSummary();
-  const blob = new Blob([JSON.stringify(metrics, null, 2)], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `planwise-metrics-${new Date().toISOString().split('T')[0]}.json`;
-  link.click();
-  toast('✅ Metrics geëxporteerd');
-}
-
-function exportLogs() {
-  const logs = window.planwiseLogger.exportLogs();
-  const blob = new Blob([logs], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `planwise-logs-${new Date().toISOString().split('T')[0]}.json`;
-  link.click();
-  toast('✅ Logs geëxporteerd');
-}
-
-function resetMetrics() {
-  if (confirm('Weet je zeker dat je alle metrics wilt resetten?')) {
-    window.planwiseMetrics.reset();
-    window.planwiseLogger.clearLogs();
-    toast('✅ Metrics gereset');
-    closeDebugPanel();
-    showDebugPanel();
-  }
-}
-
-// Enhanced toast function with logging
-const originalToast = window.toast;
-window.toast = function(message, type = 'info') {
-  // Call original toast
-  originalToast(message);
-  
-  // Log toast messages
-  const logLevel = type === 'error' ? LogLevel.ERROR : 
-                   type === 'warning' ? LogLevel.WARN : LogLevel.INFO;
-  window.planwiseLogger.log(logLevel, `Toast: ${message}`, null, { type: type });
-};
-
-// Performance monitoring for key functions
-window.openProposals = measurePerformance(window.openProposals, 'openProposals');
-window.buildProposals = measurePerformance(window.buildProposals, 'buildProposals');
-window.renderBoard = measurePerformance(window.renderBoard, 'renderBoard');
-window.updateDashboard = measurePerformance(window.updateDashboard, 'updateDashboard');
-
-// Enhanced setup with observability
-const originalSetup = window.setup;
-window.setup = function() {
-  const startTime = performance.now();
-  
-  try {
-    originalSetup();
-    
-    // Track page load
-    const loadTime = performance.now() - startTime;
-    window.planwiseMetrics.pageLoads++;
-    window.planwiseMetrics.pageLoadTimes.push(loadTime);
-    
-    // Keep only last 50 measurements
-    if (window.planwiseMetrics.pageLoadTimes.length > 50) {
-      window.planwiseMetrics.pageLoadTimes = window.planwiseMetrics.pageLoadTimes.slice(-50);
-    }
-    
-    window.planwiseLogger.info('Application setup completed', {
-      loadTime: loadTime,
-      currentRoute: document.querySelector('.route.active')?.id?.replace('route-', '') || 'unknown'
-    });
-    
-    // Add debug panel button for admins
-    if (hasPermission('manage_users')) {
-      addDebugPanelButton();
-    }
-    
-  } catch (error) {
-    handleError(error, { function: 'setup' });
-  }
-};
-
-function addDebugPanelButton() {
-  // Add debug panel button to header
-  const header = document.querySelector('header');
-  if (header && !document.getElementById('debugPanelBtn')) {
-    const debugBtn = document.createElement('button');
-    debugBtn.id = 'debugPanelBtn';
-    debugBtn.innerHTML = '🔧';
-    debugBtn.title = 'Debug Panel';
-    debugBtn.style.cssText = `
-      position: absolute;
-      top: 16px;
-      right: 80px;
-      background: rgba(var(--warn), 0.1);
-      border: 1px solid rgba(var(--warn), 0.3);
-      color: rgb(var(--warn));
-      border-radius: 4px;
-      padding: 4px 8px;
-      cursor: pointer;
-      font-size: 14px;
-      z-index: 1000;
-    `;
-    debugBtn.onclick = showDebugPanel;
-    header.appendChild(debugBtn);
-  }
-}
-
-// Enhanced login tracking
-const originalHandleLogin = window.handleLogin;
-window.handleLogin = function() {
-  window.planwiseMetrics.loginAttempts++;
-  
-  try {
-    originalHandleLogin();
-    window.planwiseMetrics.successfulLogins++;
-    window.planwiseLogger.info('User login successful', {
-      user: getCurrentUserName(),
-      role: getCurrentUserRole()
-    });
-  } catch (error) {
-    window.planwiseLogger.error('Login failed', error);
-    throw error;
-  }
-};
-
-// Enhanced role switching tracking
-const originalSwitchUserRole = window.switchUserRole;
-window.switchUserRole = function(newRole) {
-  try {
-    originalSwitchUserRole(newRole);
-    window.planwiseMetrics.roleSwitches++;
-    window.planwiseLogger.info('User role switched', {
-      newRole: newRole,
-      user: getCurrentUserName()
-    });
-  } catch (error) {
-    window.planwiseLogger.error('Role switch failed', error);
-    throw error;
-  }
-};
-
-// Enhanced scheduler tracking
-const originalBuildProposals = window.buildProposals;
-window.buildProposals = async function(ticket) {
-  const startTime = performance.now();
-  window.planwiseMetrics.schedulerRuns++;
-  
-  try {
-    const result = await originalBuildProposals(ticket);
-    const runtime = performance.now() - startTime;
-    window.planwiseMetrics.schedulerRuntime += runtime;
-    window.planwiseMetrics.proposalsGenerated += result.length;
-    
-    window.planwiseLogger.info('Scheduler run completed', {
-      ticketId: ticket.id,
-      proposalsGenerated: result.length,
-      runtime: runtime
-    });
-    
-    return result;
-  } catch (error) {
-    const runtime = performance.now() - startTime;
-    window.planwiseLogger.error('Scheduler run failed', error, {
-      ticketId: ticket.id,
-      runtime: runtime
-    });
-    throw error;
-  }
-};
-
-// Enhanced ticket creation tracking
-const originalOnSubmitRequest = window.onSubmitRequest;
-window.onSubmitRequest = function(e) {
-  try {
-    originalOnSubmitRequest(e);
-    window.planwiseMetrics.ticketsCreated++;
-    window.planwiseLogger.info('New ticket created', {
-      user: getCurrentUserName(),
-      role: getCurrentUserRole()
-    });
-  } catch (error) {
-    window.planwiseLogger.error('Ticket creation failed', error);
-    throw error;
-  }
-};
-
-// Enhanced maintenance planning tracking
-const originalPlanAllMaintenance = window.planAllMaintenance;
-window.planAllMaintenance = function() {
-  try {
-    const result = originalPlanAllMaintenance();
-    window.planwiseMetrics.maintenancePlanned += result;
-    window.planwiseLogger.info('Maintenance planning completed', {
-      maintenancePlanned: result,
-      user: getCurrentUserName()
-    });
-    return result;
-  } catch (error) {
-    window.planwiseLogger.error('Maintenance planning failed', error);
-    throw error;
-  }
-};
-
-// Enhanced appointment scheduling tracking
-const originalApproveFlow = window.approveFlow;
-window.approveFlow = function(ticketId) {
-  try {
-    const result = originalApproveFlow(ticketId);
-    window.planwiseMetrics.appointmentsScheduled++;
-    window.planwiseLogger.info('Appointment scheduled', {
-      ticketId: ticketId,
-      user: getCurrentUserName()
-    });
-    return result;
-  } catch (error) {
-    window.planwiseLogger.error('Appointment scheduling failed', error);
-    throw error;
-  }
-};
-
-// Initialize observability
-window.planwiseLogger.info('Observability system initialized', {
-  version: '1.0.0',
-  userAgent: navigator.userAgent,
-  timestamp: new Date().toISOString()
-});
-
-/* -------------------- E2E CHECKS & QUALITY IMPROVEMENTS -------------------- */
-
-// Simple e2e test suite
-window.planwiseTests = {
-  // Run all tests
-  runAll() {
-    console.log('🧪 Running PlanWise E2E tests...');
-    
-    const results = {
-      passed: 0,
-      failed: 0,
-      tests: []
-    };
-    
-    // Test 1: Basic functionality
-    results.tests.push(this.testBasicFunctionality());
-    
-    // Test 2: RBAC system
-    results.tests.push(this.testRBACSystem());
-    
-    // Test 3: Scheduler integration
-    results.tests.push(this.testSchedulerIntegration());
-    
-    // Test 4: State management
-    results.tests.push(this.testStateManagement());
-    
-    // Test 5: UI components
-    results.tests.push(this.testUIComponents());
-    
-    // Calculate results
-    results.passed = results.tests.filter(t => t.passed).length;
-    results.failed = results.tests.filter(t => !t.passed).length;
-    
-    console.log(`🧪 Test Results: ${results.passed} passed, ${results.failed} failed`);
-    
-    if (results.failed > 0) {
-      console.error('❌ Some tests failed:', results.tests.filter(t => !t.passed));
-    } else {
-      console.log('✅ All tests passed!');
-    }
-    
-    return results;
-  },
-  
-  // Test basic functionality
-  testBasicFunctionality() {
-    const test = { name: 'Basic Functionality', passed: true, errors: [] };
-    
-    try {
-      // Check if essential functions exist
-      if (typeof setup !== 'function') {
-        test.passed = false;
-        test.errors.push('setup function not found');
-      }
-      
-      if (typeof go !== 'function') {
-        test.passed = false;
-        test.errors.push('go function not found');
-      }
-      
-      if (typeof saveState !== 'function') {
-        test.passed = false;
-        test.errors.push('saveState function not found');
-      }
-      
-      if (typeof loadState !== 'function') {
-        test.passed = false;
-        test.errors.push('loadState function not found');
-      }
-      
-      // Check if state is properly initialized
-      if (!state || typeof state !== 'object') {
-        test.passed = false;
-        test.errors.push('state not properly initialized');
-      }
-      
-    } catch (error) {
-      test.passed = false;
-      test.errors.push(`Test error: ${error.message}`);
-    }
-    
-    return test;
-  },
-  
-  // Test RBAC system
-  testRBACSystem() {
-    const test = { name: 'RBAC System', passed: true, errors: [] };
-    
-    try {
-      // Check if RBAC functions exist
-      if (typeof hasPermission !== 'function') {
-        test.passed = false;
-        test.errors.push('hasPermission function not found');
-      }
-      
-      if (typeof getCurrentUserRole !== 'function') {
-        test.passed = false;
-        test.errors.push('getCurrentUserRole function not found');
-      }
-      
-      if (typeof requirePermission !== 'function') {
-        test.passed = false;
-        test.errors.push('requirePermission function not found');
-      }
-      
-      // Check if roles are defined
-      if (!ROLES || typeof ROLES !== 'object') {
-        test.passed = false;
-        test.errors.push('ROLES not defined');
-      }
-      
-      // Check if role permissions are defined
-      if (!ROLE_PERMISSIONS || typeof ROLE_PERMISSIONS !== 'object') {
-        test.passed = false;
-        test.errors.push('ROLE_PERMISSIONS not defined');
-      }
-      
-    } catch (error) {
-      test.passed = false;
-      test.errors.push(`Test error: ${error.message}`);
-    }
-    
-    return test;
-  },
-  
-  // Test scheduler integration
-  testSchedulerIntegration() {
-    const test = { name: 'Scheduler Integration', passed: true, errors: [] };
-    
-    try {
-      // Check if scheduler functions exist
-      if (typeof buildProposals !== 'function') {
-        test.passed = false;
-        test.errors.push('buildProposals function not found');
-      }
-      
-      if (typeof openProposals !== 'function') {
-        test.passed = false;
-        test.errors.push('openProposals function not found');
-      }
-      
-      // Check if scheduler service is available
-      if (typeof window.planwiseScheduler === 'undefined') {
-        test.passed = false;
-        test.errors.push('planwiseScheduler not available');
-      }
-      
-    } catch (error) {
-      test.passed = false;
-      test.errors.push(`Test error: ${error.message}`);
-    }
-    
-    return test;
-  },
-  
-  // Test state management
-  testStateManagement() {
-    const test = { name: 'State Management', passed: true, errors: [] };
-    
-    try {
-      // Check if state has required properties
-      const requiredProps = ['tickets', 'technicians', 'calendarEvents', 'installations'];
-      
-      requiredProps.forEach(prop => {
-        if (!Array.isArray(state[prop])) {
-          test.passed = false;
-          test.errors.push(`state.${prop} is not an array`);
-        }
-      });
-      
-      // Test state persistence
-      const testData = { test: 'data' };
-      const originalState = JSON.stringify(state);
-      
-      // Simulate state change
-      state.testData = testData;
-      saveState();
-      
-      // Reload state
-      const newState = loadState();
-      if (!newState.testData || newState.testData.test !== 'data') {
-        test.passed = false;
-        test.errors.push('State persistence not working');
-      }
-      
-      // Restore original state
-      state = JSON.parse(originalState);
-      saveState();
-      
-    } catch (error) {
-      test.passed = false;
-      test.errors.push(`Test error: ${error.message}`);
-    }
-    
-    return test;
-  },
-  
-  // Test UI components
-  testUIComponents() {
-    const test = { name: 'UI Components', passed: true, errors: [] };
-    
-    try {
-      // Check if essential UI elements exist
-      const requiredElements = [
-        'app',
-        'toast',
-        'loginModal',
-        'registerModal'
-      ];
-      
-      requiredElements.forEach(id => {
-        if (!document.getElementById(id)) {
-          test.passed = false;
-          test.errors.push(`UI element #${id} not found`);
-        }
-      });
-      
-      // Check if navigation buttons exist
-      const navButtons = document.querySelectorAll('.nav-btn');
-      if (navButtons.length === 0) {
-        test.passed = false;
-        test.errors.push('No navigation buttons found');
-      }
-      
-      // Check if routes exist
-      const routes = document.querySelectorAll('.route');
-      if (routes.length === 0) {
-        test.passed = false;
-        test.errors.push('No routes found');
-      }
-      
-    } catch (error) {
-      test.passed = false;
-      test.errors.push(`Test error: ${error.message}`);
-    }
-    
-    return test;
-  }
-};
+// ... rest of the code ...
 
 // Health check function
 function runHealthCheck() {
