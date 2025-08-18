@@ -624,7 +624,11 @@ function applyPolyfillsAndCloseStrayDialogs() {
   if (typeof dialogPolyfill !== 'undefined') {
     const dialogs = document.querySelectorAll('dialog');
     dialogs.forEach(dialog => {
-      dialogPolyfill.registerDialog(dialog);
+      try {
+        dialogPolyfill.registerDialog(dialog);
+      } catch (error) {
+        console.warn('Failed to register dialog:', error);
+      }
     });
     console.log('Dialog polyfill registered for', dialogs.length, 'dialogs');
   }
@@ -637,6 +641,33 @@ function applyPolyfillsAndCloseStrayDialogs() {
   // Remove any stray overlays/backdrops
   const blockers = document.querySelectorAll('.modal-backdrop,.overlay,.fc-popover'); 
   blockers.forEach(b => b.remove());
+  
+  // Clear any login errors
+  clearLoginError();
+}
+
+// Enhanced modal opening function
+function openModal(modalId) {
+  // Close any existing modals first
+  document.querySelectorAll('dialog[open]').forEach(d => { 
+    try { d.close(); } catch(_){} 
+  });
+  
+  // Remove any stray overlays/backdrops
+  const blockers = document.querySelectorAll('.modal-backdrop,.overlay,.fc-popover'); 
+  blockers.forEach(b => b.remove());
+  
+  // Open the requested modal
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    try {
+      modal.showModal();
+    } catch (error) {
+      console.warn('Failed to open modal:', error);
+      // Fallback: try to show as regular dialog
+      modal.style.display = 'block';
+    }
+  }
 }
 
 // Initialize app for specific auth state
@@ -3577,6 +3608,7 @@ function renderTenantsTable() {
       <thead>
         <tr>
           <th>Organisatie</th>
+          <th>Login-slug</th>
           <th>Branche</th>
           <th>Plan</th>
           <th>Gebruikers</th>
@@ -3595,6 +3627,7 @@ function renderTenantsTable() {
           return `
             <tr>
               <td><strong>${tenant.info.company}</strong></td>
+              <td><code style="background: rgba(var(--bg-2), 0.5); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${tenant.key}</code></td>
               <td>${tenant.info.industry || 'Onbekend'}</td>
               <td><span class="badge" style="background: ${getPlanColor(tenant.info.plan)}">${tenant.info.plan}</span></td>
               <td>${tenant.users.length}</td>
@@ -4758,10 +4791,14 @@ function exportBillingData() {
 /* -------------------- AUTHENTICATION & TENANT MANAGEMENT -------------------- */
 
 function showLoginModal() {
-  const modal = $("#loginModal");
-  if (modal) {
-    modal.showModal();
-  }
+  // Populate available organizations for autocomplete
+  populateAvailableOrganizations();
+  
+  // Clear any previous errors
+  clearLoginError();
+  
+  // Use enhanced modal opening
+  openModal('loginModal');
 }
 
 function showRegisterModal() {
@@ -4778,7 +4815,7 @@ function handleLogin() {
   const password = $("#loginPassword").value.trim();
   
   if (!company || !username || !password) {
-    alert("Vul alle velden in.");
+    showLoginError("Vul alle velden in.");
     return;
   }
   
@@ -4789,18 +4826,24 @@ function handleLogin() {
       $("#loginModal").close();
       location.reload();
     } else {
-      alert("Fout bij inloggen als Super Admin");
+      showLoginError("Fout bij inloggen als Super Admin");
     }
     return;
   }
   
-  // Regular tenant authentication
-  const tenantKey = company.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Find tenant by slug or company name (case-insensitive)
+  const tenantKey = findTenantByInput(company);
+  
+  if (!tenantKey) {
+    showLoginError("Onbekende organisatie; gebruik de slug uit Super Admin of registreer eerst een account.");
+    populateAvailableOrganizations();
+    return;
+  }
   
   // Check if tenant exists
   const existingTenant = localStorage.getItem(`planwise_tenant_${tenantKey}`);
   if (!existingTenant) {
-    alert("Bedrijf niet gevonden. Registreer eerst een account.");
+    showLoginError("Organisatie niet gevonden. Registreer eerst een account.");
     return;
   }
   
@@ -4808,7 +4851,7 @@ function handleLogin() {
   const user = tenantData.users.find(u => u.username === username && u.password === password);
   
   if (!user) {
-    alert("Ongeldige gebruikersnaam of wachtwoord.");
+    showLoginError("Ongeldige gebruikersnaam of wachtwoord.");
     return;
   }
   
@@ -4820,18 +4863,60 @@ function handleLogin() {
   };
   
   if (Auth.set(authData)) {
+    clearLoginError();
     $("#loginModal").close();
     location.reload();
   } else {
-    alert("Fout bij inloggen");
+    showLoginError("Fout bij inloggen");
   }
+}
+
+// Helper function to find tenant by slug or company name
+function findTenantByInput(input) {
+  const tenants = getAllTenants();
   
-  // Update RBAC UI
-  updateRoleIndicator();
-  setupRoleSwitcher();
-  applyRoleBasedUI();
+  // First try exact slug match
+  const exactSlugMatch = tenants.find(t => t.key.toLowerCase() === input.toLowerCase());
+  if (exactSlugMatch) return exactSlugMatch.key;
   
-  alert(`Welkom ${user.username}! Je bent ingelogd bij ${tenantData.info.company} als ${ROLE_PERMISSIONS[user.role]?.name || 'Gebruiker'}.`);
+  // Then try company name match (case-insensitive)
+  const companyMatch = tenants.find(t => t.info.company.toLowerCase() === input.toLowerCase());
+  if (companyMatch) return companyMatch.key;
+  
+  return null;
+}
+
+// Show login error message
+function showLoginError(message) {
+  const errorDiv = $("#loginError");
+  if (errorDiv) {
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+  }
+}
+
+// Clear login error message
+function clearLoginError() {
+  const errorDiv = $("#loginError");
+  if (errorDiv) {
+    errorDiv.style.display = 'none';
+  }
+}
+
+// Populate available organizations in datalist
+function populateAvailableOrganizations() {
+  const datalist = $("#availableOrganizations");
+  if (!datalist) return;
+  
+  const tenants = getAllTenants();
+  datalist.innerHTML = '';
+  
+  tenants.forEach(tenant => {
+    const option = document.createElement('option');
+    option.value = tenant.info.company;
+    option.textContent = `${tenant.info.company} (${tenant.key})`;
+    datalist.appendChild(option);
+  });
 }
 
 function handleRegister() {
@@ -4949,9 +5034,31 @@ function handleRegister() {
 // Global reset function
 window.resetApp = function() {
   if (confirm("Weet je zeker dat je de app wilt resetten? Dit verwijdert alle lokale data en herstart de applicatie.")) {
-    localStorage.clear();
+    // Clear all PlanWise related data
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('planwise_')) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    keysToRemove.forEach(key => localStorage.removeItem(key));
     sessionStorage.clear();
-    location.reload();
+    
+    // Close any open modals
+    document.querySelectorAll('dialog[open]').forEach(d => { 
+      try { d.close(); } catch(_){} 
+    });
+    
+    // Remove any stray overlays/backdrops
+    const blockers = document.querySelectorAll('.modal-backdrop,.overlay,.fc-popover'); 
+    blockers.forEach(b => b.remove());
+    
+    // Show login modal after reset
+    setTimeout(() => {
+      showLoginModal();
+    }, 100);
   }
 }
 
@@ -4975,6 +5082,7 @@ function showSwitchTenantModal() {
   const select = document.getElementById('switchTenantSelect');
   const info = document.getElementById('switchTenantInfo');
   const details = document.getElementById('switchTenantDetails');
+  const superAdminOption = document.getElementById('superAdminSwitchOption');
   
   if (!modal || !select) return;
   
@@ -4987,7 +5095,7 @@ function showSwitchTenantModal() {
     if (org.slug !== currentAuth?.orgSlug) {
       const option = document.createElement('option');
       option.value = org.slug;
-      option.textContent = `${org.name} (${org.plan})`;
+      option.textContent = `${org.name} (${org.slug}) - ${org.plan}`;
       select.appendChild(option);
     }
   });
@@ -4998,6 +5106,7 @@ function showSwitchTenantModal() {
     if (selectedOrg) {
       details.innerHTML = `
         <div><strong>Naam:</strong> ${selectedOrg.name}</div>
+        <div><strong>Login-slug:</strong> <code style="background: rgba(var(--bg-2), 0.5); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${selectedOrg.slug}</code></div>
         <div><strong>Plan:</strong> ${selectedOrg.plan}</div>
         <div><strong>Aangemaakt:</strong> ${new Date(selectedOrg.created).toLocaleDateString('nl-NL')}</div>
       `;
@@ -5007,9 +5116,23 @@ function showSwitchTenantModal() {
     }
   };
   
+  // Show Super Admin option if user has superadmin role
+  if (superAdminOption) {
+    superAdminOption.style.display = currentAuth?.role === 'superadmin' ? 'block' : 'none';
+  }
+  
   // Close dropdown and show modal
   document.getElementById('accountDropdown').style.display = 'none';
-  modal.showModal();
+  openModal('switchTenantModal');
+}
+
+function switchToSuperAdminFromModal() {
+  if (Auth.becomeSuperAdmin()) {
+    document.getElementById('switchTenantModal').close();
+    location.reload();
+  } else {
+    alert('Fout bij het wisselen naar Super Admin modus');
+  }
 }
 
 function performTenantSwitch() {

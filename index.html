@@ -9,6 +9,7 @@
   <!-- FullCalendar voor het Dashboard -->
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet" />
   <!-- Dialog polyfill voor GitHub Pages compatibiliteit -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dialog-polyfill/0.5.6/dialog-polyfill.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dialog-polyfill/0.5.6/dialog-polyfill.min.js"></script>
   <!-- Fixed FullCalendar script voor GitHub Pages -->
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/main.min.js"></script>
@@ -804,8 +805,12 @@
       <div class="modal-body">
         <div class="form">
           <div class="field">
-            <label>Bedrijfsnaam</label>
-            <input id="loginCompany" type="text" required placeholder="Uw bedrijfsnaam">
+            <label>Bedrijfsnaam of Login-slug</label>
+            <input id="loginCompany" type="text" required placeholder="Uw bedrijfsnaam of login-slug" list="availableOrganizations">
+            <datalist id="availableOrganizations">
+              <!-- Dynamisch gevuld door JavaScript -->
+            </datalist>
+            <div id="loginError" class="error-message" style="display: none; color: #ef4444; font-size: 0.875em; margin-top: 4px;"></div>
           </div>
           <div class="field">
             <label>Gebruikersnaam</label>
@@ -1045,6 +1050,9 @@
       <footer class="modal-foot">
         <button class="btn" value="cancel">Annuleren</button>
         <button class="btn primary" onclick="performTenantSwitch()" value="ok">Ga naar organisatie</button>
+        <div id="superAdminSwitchOption" style="margin-top: 8px; display: none;">
+          <button class="btn" onclick="switchToSuperAdminFromModal()" style="background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.3);">🔧 Ga naar Super Admin</button>
+        </div>
       </footer>
     </form>
   </dialog>
@@ -1113,5 +1121,8 @@
   
   <!-- App -->
   <script src="app.js?v=2025-08-14"></script>
+  
+  <!-- Test Scripts (Development Only) -->
+  <script src="test_slug_management.js?v=2025-08-14"></script>
 </body>
 </html>
