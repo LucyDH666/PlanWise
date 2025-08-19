@@ -183,7 +183,7 @@
 /* -------------------- GLOBAL STATE -------------------- */
 let currentAuth = null;
 let currentRoute = "dashboard";
-let state = {};
+let state = null; // Will be initialized in initAppFor() after authentication
 
 // Super Admin credentials (in production, this should be env variables)
 const SUPER_ADMIN = {
@@ -511,7 +511,7 @@ function getCurrentUserName() {
 }
 
 // Enhanced role switching functionality
-function switchUserRole(newRole) {
+async function switchUserRole(newRole) {
   if (!hasPermission('manage_users')) {
     toast('❌ Geen toegang tot rol wijziging');
     return;
@@ -533,7 +533,7 @@ function switchUserRole(newRole) {
       // Refresh current page
       const currentRoute = document.querySelector('.route.active')?.id?.replace('route-', '');
       if (currentRoute) {
-        go(currentRoute);
+        await go(currentRoute);
       }
     } else {
       toast('❌ Fout bij het wijzigen van rol');
@@ -819,7 +819,6 @@ const defaultState = {
   maintenancePlans:[]
 };
 
-state = loadState() || seedDemo(structuredClone(defaultState));
 let calendar = null;     // FullCalendar instance
 currentRoute = "new";
 
@@ -953,7 +952,12 @@ async function initAppFor(auth) {
     } else {
       console.warn('PlanWiseData not available, using fallback initialization');
       // Fallback to old method
-      state = loadState() || seedDemo(structuredClone(defaultState));
+      state = await loadState() || seedDemo(structuredClone(defaultState));
+    }
+    
+    // Ensure state is properly initialized
+    if (!state) {
+      throw new Error('Failed to initialize application state');
     }
     
     // Initialize RBAC system
@@ -969,12 +973,12 @@ async function initAppFor(auth) {
 
     // Router-knoppen
     document.querySelectorAll(".nav-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         if (!currentAuth) {
           showLoginModal();
           return;
         }
-        go(btn.dataset.route);
+        await go(btn.dataset.route);
       });
     });
 
@@ -993,7 +997,7 @@ async function initAppFor(auth) {
     document.getElementById("searchInput")?.addEventListener("input", renderBoard);
 
     // Init eerste route - go to dashboard by default
-    go("dashboard");
+    await go("dashboard");
     
   } catch (error) {
     console.error('App initialization failed:', error);
@@ -1047,11 +1051,31 @@ document.addEventListener('click', function(event) {
 });
 
 /* -------------------- ROUTER -------------------- */
-function go(route){
+async function go(route){
   // Check if user has permission for this route
   if (!currentAuth) {
     showLoginModal();
     return;
+  }
+  
+  // Check if state is loaded, if not wait for initialization
+  if (!state) {
+    console.log('State not loaded yet, waiting for initialization...');
+    if (window.PlanWiseData) {
+      window.PlanWiseData.showLoader('Laden...');
+    }
+    // Wait a bit for state to be initialized
+    await new Promise(resolve => setTimeout(resolve, 100));
+    if (!state) {
+      console.error('State still not loaded after waiting');
+      if (window.showErrorToast) {
+        window.showErrorToast('Fout bij laden van gegevens. Ververs de pagina.');
+      }
+      return;
+    }
+    if (window.PlanWiseData) {
+      window.PlanWiseData.hideLoader();
+    }
   }
   
   // Special handling for Super Admin routes
@@ -1088,7 +1112,7 @@ function go(route){
   if(route==="superadmin") loadPlatformData();
   if(route==="platform-analytics") loadAnalyticsData();
   if(route==="platform-billing") loadBillingData();
-  if(route==="technician") loadTechnicianDashboard();
+  if(route==="technician") await loadTechnicianDashboard();
 }
 
 function injectMaintenanceNav(){
@@ -1140,11 +1164,11 @@ async function saveState(){
   } 
 }
 
-function loadState(){
+async function loadState(){
   try{ 
     if (window.PlanWiseData) {
       // Use data service for loading
-      return window.PlanWiseData.loadState();
+      return await window.PlanWiseData.loadState();
     } else {
       // Fallback to old method
       const raw=localStorage.getItem(getStorageKey()); 
@@ -1253,7 +1277,7 @@ function seedDemo(s){
 }
 
 /* -------------------- NIEUWE AANVRAAG -------------------- */
-function onSubmitRequest(e){
+async function onSubmitRequest(e){
   e.preventDefault();
   
   if (!requirePermission('edit_planner')) return;
@@ -1269,7 +1293,7 @@ function onSubmitRequest(e){
   $("#reqStatus").textContent="Verzonden. De planner ontvangt deze aanvraag.";
   toast("✅ Aanvraag ingediend");
   e.target.reset();
-  go("planner");
+  await go("planner");
 }
 function guessDuration(cat){ const map={ "CV-onderhoud":60,"Loodgieter":90,"Elektra":90,"Airco/Koeling":120,"Algemeen":60 }; return map[cat]||60; }
 
@@ -3249,7 +3273,7 @@ window.generateMaintenanceNow = generateMaintenanceNow;
 window.addDemoEvents = addDemoEvents;
 
 // Test functie voor dashboard
-window.testDashboard = function() {
+window.testDashboard = async function() {
   console.log("Testing dashboard...");
   console.log("Current route:", currentRoute);
   console.log("Calendar instance:", calendar);
@@ -3257,7 +3281,7 @@ window.testDashboard = function() {
   console.log("FullCalendar available:", typeof FullCalendar !== 'undefined');
   
   if(currentRoute !== "dashboard") {
-    go("dashboard");
+    await go("dashboard");
   } else {
     updateDashboard();
   }
@@ -3808,11 +3832,11 @@ function parseDate(dateStr) {
 
 /* -------------------- SUPER ADMIN FUNCTIONALITY -------------------- */
 
-function showSuperAdminInterface() {
+async function showSuperAdminInterface() {
   console.log("Initializing Super Admin interface...");
   
   // Go to super admin dashboard
-  go('superadmin');
+  await go('superadmin');
   
   // Load all platform data
   loadPlatformData();
@@ -6793,13 +6817,13 @@ window.runPlanwiseHealthCheck = runHealthCheck;
 /* -------------------- MONTEUR DASHBOARD -------------------- */
 
 // Load technician dashboard
-function loadTechnicianDashboard() {
+async function loadTechnicianDashboard() {
   console.log("Loading technician dashboard...");
   
   // Check if user has technician role
   if (!hasPermission('view_technician_dashboard')) {
     toast("❌ Geen toegang tot monteur dashboard");
-    go('dashboard');
+    await go('dashboard');
     return;
   }
   
