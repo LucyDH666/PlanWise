@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanWise Quick Fix Tool</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0c11;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #1a1d24;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2a2d34;
+        }
+        
+        h1 {
+            color: #5accff;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        
+        .section {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #252830;
+            border-radius: 8px;
+            border: 1px solid #3a3d44;
+        }
+        
+        .section h2 {
+            color: #5accff;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status.success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .status.error {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .status.warning {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        button {
+            background: #5accff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 8px 8px 8px 0;
+        }
+        
+        button:hover {
+            background: #4bb8e6;
+        }
+        
+        button.danger {
+            background: #ef4444;
+        }
+        
+        button.danger:hover {
+            background: #dc2626;
+        }
+        
+        .result {
+            margin: 8px 0;
+            padding: 12px;
+            background: #1e2127;
+            border-radius: 4px;
+            border-left: 4px solid #3a3d44;
+        }
+        
+        .result.success {
+            border-left-color: #10b981;
+        }
+        
+        .result.error {
+            border-left-color: #ef4444;
+        }
+        
+        .result.warning {
+            border-left-color: #f59e0b;
+        }
+        
+        pre {
+            background: #1e2127;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 PlanWise Quick Fix Tool</h1>
+        
+        <div class="section">
+            <h2>🚨 Common Issues & Quick Fixes</h2>
+            
+            <div class="result">
+                <strong>Problem:</strong> Login modal not appearing<br>
+                <strong>Solution:</strong> 
+                <button onclick="fixLoginModal()">Fix Login Modal</button>
+                <button onclick="clearCache()">Clear Cache</button>
+            </div>
+            
+            <div class="result">
+                <strong>Problem:</strong> Services not loading<br>
+                <strong>Solution:</strong> 
+                <button onclick="fixServices()">Fix Services</button>
+                <button onclick="reloadPage()">Reload Page</button>
+            </div>
+            
+            <div class="result">
+                <strong>Problem:</strong> App stuck or frozen<br>
+                <strong>Solution:</strong> 
+                <button onclick="resetApp()" class="danger">Reset App</button>
+                <button onclick="clearAllData()" class="danger">Clear All Data</button>
+            </div>
+            
+            <div class="result">
+                <strong>Problem:</strong> Authentication issues<br>
+                <strong>Solution:</strong> 
+                <button onclick="fixAuth()">Fix Auth</button>
+                <button onclick="createSuperAdmin()">Create Super Admin</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔍 Diagnostic Tools</h2>
+            
+            <button onclick="runHealthCheck()">Run Health Check</button>
+            <button onclick="checkServices()">Check Services</button>
+            <button onclick="checkStorage()">Check Storage</button>
+            <button onclick="checkUI()">Check UI Elements</button>
+            
+            <div id="diagnosticResults"></div>
+        </div>
+        
+        <div class="section">
+            <h2>📋 Manual Steps</h2>
+            
+            <div class="result">
+                <strong>1. Clear Browser Cache:</strong><br>
+                • Press F12 to open developer tools<br>
+                • Go to Application/Storage tab<br>
+                • Clear all localStorage for this domain<br>
+                • Refresh the page
+            </div>
+            
+            <div class="result">
+                <strong>2. Check Console Errors:</strong><br>
+                • Press F12 to open developer tools<br>
+                • Look for red error messages in Console tab<br>
+                • Report any errors to support
+            </div>
+            
+            <div class="result">
+                <strong>3. Try Different Browser:</strong><br>
+                • Test in Chrome, Firefox, or Edge<br>
+                • Disable browser extensions temporarily<br>
+                • Try incognito/private mode
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔗 Navigation</h2>
+            
+            <button onclick="goToMainApp()">Go to Main App</button>
+            <button onclick="goToDiagnostic()">Go to Full Diagnostic</button>
+            <button onclick="goToTroubleshooting()">View Troubleshooting Guide</button>
+        </div>
+    </div>
+
+    <script>
+        // Fix Login Modal
+        function fixLoginModal() {
+            try {
+                // Clear any existing modals
+                const existingModals = document.querySelectorAll('dialog[open]');
+                existingModals.forEach(modal => {
+                    try { modal.close(); } catch(e) {}
+                });
+                
+                // Remove error toasts
+                const errorToasts = document.querySelectorAll('.error-toast');
+                errorToasts.forEach(toast => toast.remove());
+                
+                // Try to show login modal
+                if (typeof showLoginModal === 'function') {
+                    showLoginModal();
+                    showResult('Login modal fix attempted', 'success');
+                } else {
+                    showResult('showLoginModal function not available', 'error');
+                }
+            } catch (error) {
+                showResult('Error fixing login modal: ' + error.message, 'error');
+            }
+        }
+        
+        // Fix Services
+        function fixServices() {
+            try {
+                if (typeof window.initializeServices === 'function') {
+                    window.initializeServices().then(success => {
+                        if (success) {
+                            showResult('Services initialized successfully', 'success');
+                        } else {
+                            showResult('Services failed to initialize', 'error');
+                        }
+                    });
+                } else {
+                    showResult('initializeServices function not available', 'error');
+                }
+            } catch (error) {
+                showResult('Error fixing services: ' + error.message, 'error');
+            }
+        }
+        
+        // Reset App
+        function resetApp() {
+            if (confirm('Weet je zeker dat je de app wilt resetten? Dit verwijdert alle lokale data.')) {
+                try {
+                    if (typeof window.resetApp === 'function') {
+                        window.resetApp();
+                        showResult('App reset initiated', 'success');
+                    } else {
+                        clearAllData();
+                    }
+                } catch (error) {
+                    showResult('Error resetting app: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        // Clear All Data
+        function clearAllData() {
+            if (confirm('Weet je zeker dat je alle data wilt wissen?')) {
+                try {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    showResult('All data cleared', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } catch (error) {
+                    showResult('Error clearing data: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        // Fix Auth
+        function fixAuth() {
+            try {
+                if (typeof window.Auth !== 'undefined') {
+                    // Clear auth data
+                    window.Auth.logout();
+                    showResult('Auth data cleared', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showResult('Auth service not available', 'error');
+                }
+            } catch (error) {
+                showResult('Error fixing auth: ' + error.message, 'error');
+            }
+        }
+        
+        // Create Super Admin
+        function createSuperAdmin() {
+            try {
+                const superAdminData = {
+                    orgSlug: 'PLANWISE_PLATFORM',
+                    role: 'superadmin',
+                    user: 'superadmin',
+                    version: 2,
+                    timestamp: new Date().toISOString()
+                };
+                
+                if (typeof window.Auth !== 'undefined') {
+                    window.Auth.set(superAdminData);
+                    showResult('Super Admin created', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    localStorage.setItem('planwise_auth_v2', JSON.stringify(superAdminData));
+                    showResult('Super Admin created (fallback)', 'success');
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (error) {
+                showResult('Error creating Super Admin: ' + error.message, 'error');
+            }
+        }
+        
+        // Health Check
+        function runHealthCheck() {
+            try {
+                if (typeof window.runPlanwiseHealthCheck === 'function') {
+                    const results = window.runPlanwiseHealthCheck();
+                    showResult('Health check completed - check console for details', 'success');
+                } else {
+                    showResult('Health check function not available', 'error');
+                }
+            } catch (error) {
+                showResult('Error running health check: ' + error.message, 'error');
+            }
+        }
+        
+        // Check Services
+        function checkServices() {
+            const services = {
+                'PlanWiseData': typeof window.PlanWiseData !== 'undefined',
+                'Auth': typeof window.Auth !== 'undefined',
+                'logsService': typeof window.logsService !== 'undefined',
+                'FullCalendar': typeof FullCalendar !== 'undefined'
+            };
+            
+            const results = Object.entries(services).map(([name, available]) => 
+                `${name}: ${available ? '✅' : '❌'}`
+            ).join('<br>');
+            
+            showResult('Service Status:<br>' + results, available ? 'success' : 'error');
+        }
+        
+        // Check Storage
+        function checkStorage() {
+            try {
+                const planwiseKeys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('planwise_')) {
+                        planwiseKeys.push(key);
+                    }
+                }
+                
+                const result = `LocalStorage: ${typeof localStorage !== 'undefined' ? '✅' : '❌'}<br>` +
+                             `PlanWise Keys: ${planwiseKeys.length}<br>` +
+                             `Keys: ${planwiseKeys.join(', ') || 'None'}`;
+                
+                showResult(result, 'success');
+            } catch (error) {
+                showResult('Error checking storage: ' + error.message, 'error');
+            }
+        }
+        
+        // Check UI
+        function checkUI() {
+            const elements = {
+                'loginModal': document.getElementById('loginModal'),
+                'app': document.getElementById('app'),
+                'loginScreen': document.getElementById('loginScreen'),
+                'loader': document.getElementById('loader')
+            };
+            
+            const results = Object.entries(elements).map(([name, element]) => 
+                `${name}: ${element ? '✅' : '❌'}`
+            ).join('<br>');
+            
+            showResult('UI Elements:<br>' + results, 'success');
+        }
+        
+        // Utility functions
+        function clearCache() {
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+                showResult('Cache cleared', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } catch (error) {
+                showResult('Error clearing cache: ' + error.message, 'error');
+            }
+        }
+        
+        function reloadPage() {
+            location.reload();
+        }
+        
+        function goToMainApp() {
+            window.location.href = 'index.html';
+        }
+        
+        function goToDiagnostic() {
+            window.location.href = 'diagnostic.html';
+        }
+        
+        function goToTroubleshooting() {
+            // Open troubleshooting in new tab
+            window.open('TROUBLESHOOTING.md', '_blank');
+        }
+        
+        function showResult(message, type) {
+            const resultsDiv = document.getElementById('diagnosticResults');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = message;
+            resultsDiv.appendChild(resultDiv);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (resultDiv.parentNode) {
+                    resultDiv.remove();
+                }
+            }, 5000);
+        }
+        
+        // Auto-run basic checks on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                checkServices();
+                checkStorage();
+                checkUI();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
