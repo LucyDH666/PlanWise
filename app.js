@@ -157,7 +157,7 @@
   // Initialize services with retry mechanism
   window.initializeServices = async function() {
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 5; // Increased attempts
     
     while (attempts < maxAttempts) {
       attempts++;
@@ -170,12 +170,23 @@
       
       if (attempts < maxAttempts) {
         console.log('Waiting for services to load...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
       }
     }
     
     console.error('Failed to initialize services after', maxAttempts, 'attempts');
-    showErrorToast('Services konden niet worden geladen. Ververs de pagina.');
+    
+    // Show more specific error message
+    const missingServices = [];
+    if (typeof window.PlanWiseData === 'undefined') missingServices.push('Data Service');
+    if (typeof window.Auth === 'undefined') missingServices.push('Auth Service');
+    if (typeof window.logsService === 'undefined') missingServices.push('Logs Service');
+    
+    const errorMessage = missingServices.length > 0 
+      ? `Services niet geladen: ${missingServices.join(', ')}. Ververs de pagina.`
+      : 'Services konden niet worden geladen. Ververs de pagina.';
+    
+    showErrorToast(errorMessage);
     return false;
   };
 })();
@@ -838,12 +849,22 @@ document.addEventListener("DOMContentLoaded", async function() {
     }
     
     // Migrate legacy state if needed
-    if (window.PlanWiseData) {
-      await window.PlanWiseData.migrateLegacyState();
+    if (window.PlanWiseData && typeof window.PlanWiseData.migrateLegacyState === 'function') {
+      try {
+        await window.PlanWiseData.migrateLegacyState();
+      } catch (migrationError) {
+        console.warn('Legacy migration failed:', migrationError);
+      }
     }
     
     // Get auth state
-    currentAuth = Auth.get();
+    if (typeof Auth !== 'undefined' && typeof Auth.get === 'function') {
+      currentAuth = Auth.get();
+    } else {
+      console.error('Auth service not available');
+      showErrorToast('Authenticatie service niet beschikbaar. Ververs de pagina.');
+      return;
+    }
     
     if (!currentAuth) {
       console.log('No auth state found, showing login modal');
@@ -854,16 +875,31 @@ document.addEventListener("DOMContentLoaded", async function() {
     console.log('Auth state found, initializing app');
     
     // Initialize app for current auth
-    await initAppFor(currentAuth);
+    if (typeof initAppFor === 'function') {
+      await initAppFor(currentAuth);
+    } else {
+      console.error('initAppFor function not available');
+      showErrorToast('App initialisatie functie niet beschikbaar. Ververs de pagina.');
+      return;
+    }
     
     // Ensure calendar is loaded before binding event handlers
-    ensureCalendarLoaded();
+    if (typeof ensureCalendarLoaded === 'function') {
+      ensureCalendarLoaded();
+    }
     
     console.log('PlanWise initialization completed successfully');
     
   } catch (error) {
     console.error('Error during PlanWise initialization:', error);
     showErrorToast('Fout tijdens initialisatie: ' + error.message);
+    
+    // Show login modal as fallback
+    setTimeout(() => {
+      if (typeof showLoginModal === 'function') {
+        showLoginModal();
+      }
+    }, 1000);
   }
 });
 
@@ -3206,6 +3242,97 @@ function pickTechForCategory(category){
 renderBoard();
 
 /* -------------------- DEBUG HELPER -------------------- */
+
+// Comprehensive health check function
+window.runPlanwiseHealthCheck = function() {
+  console.log('🔍 Running PlanWise Health Check...');
+  
+  const results = {
+    services: {},
+    auth: {},
+    ui: {},
+    storage: {},
+    errors: []
+  };
+  
+  // Check services
+  try {
+    results.services.planwiseData = typeof window.PlanWiseData !== 'undefined';
+    results.services.auth = typeof window.Auth !== 'undefined';
+    results.services.logs = typeof window.logsService !== 'undefined';
+    results.services.fullCalendar = typeof FullCalendar !== 'undefined';
+  } catch (error) {
+    results.errors.push(`Service check error: ${error.message}`);
+  }
+  
+  // Check auth state
+  try {
+    if (typeof window.Auth !== 'undefined') {
+      const auth = window.Auth.get();
+      results.auth.hasAuth = !!auth;
+      results.auth.authData = auth;
+    } else {
+      results.auth.hasAuth = false;
+      results.auth.error = 'Auth service not available';
+    }
+  } catch (error) {
+    results.errors.push(`Auth check error: ${error.message}`);
+  }
+  
+  // Check UI elements
+  try {
+    results.ui.loginModal = !!document.getElementById('loginModal');
+    results.ui.app = !!document.getElementById('app');
+    results.ui.loginScreen = !!document.getElementById('loginScreen');
+    results.ui.loader = !!document.getElementById('loader');
+  } catch (error) {
+    results.errors.push(`UI check error: ${error.message}`);
+  }
+  
+  // Check storage
+  try {
+    results.storage.localStorage = typeof localStorage !== 'undefined';
+    results.storage.sessionStorage = typeof sessionStorage !== 'undefined';
+    results.storage.planwiseKeys = [];
+    
+    if (localStorage) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('planwise_')) {
+          results.storage.planwiseKeys.push(key);
+        }
+      }
+    }
+  } catch (error) {
+    results.errors.push(`Storage check error: ${error.message}`);
+  }
+  
+  // Log results
+  console.log('📊 Health Check Results:', results);
+  
+  // Show summary
+  const summary = {
+    services: Object.values(results.services).filter(Boolean).length + '/' + Object.keys(results.services).length,
+    auth: results.auth.hasAuth ? 'OK' : 'NO_AUTH',
+    ui: Object.values(results.ui).filter(Boolean).length + '/' + Object.keys(results.ui).length,
+    storage: results.storage.localStorage ? 'OK' : 'FAILED',
+    errors: results.errors.length
+  };
+  
+  console.log('📋 Summary:', summary);
+  
+  // Show error toast if there are issues
+  if (results.errors.length > 0) {
+    const errorMessage = `Health check found ${results.errors.length} issues. Check console for details.`;
+    if (typeof showErrorToast === 'function') {
+      showErrorToast(errorMessage);
+    } else {
+      alert(errorMessage);
+    }
+  }
+  
+  return results;
+};
 // Functie om localStorage te resetten (voor testing)
 function resetDemoData() {
   localStorage.removeItem(STORAGE_KEY);
@@ -5128,17 +5255,36 @@ function exportBillingData() {
 
 function showLoginModal() {
   try {
+    // Ensure the modal element exists
+    const loginModal = document.getElementById('loginModal');
+    if (!loginModal) {
+      console.error('Login modal element not found');
+      createFallbackLoginModal();
+      return;
+    }
+    
     // Populate available organizations for autocomplete
-    populateAvailableOrganizations();
+    if (typeof populateAvailableOrganizations === 'function') {
+      populateAvailableOrganizations();
+    }
     
     // Clear any previous errors
-    clearLoginError();
+    if (typeof clearLoginError === 'function') {
+      clearLoginError();
+    }
     
     // Use enhanced modal opening
-    openModal('loginModal');
+    if (typeof openModal === 'function') {
+      openModal('loginModal');
+    } else {
+      // Fallback to direct modal opening
+      loginModal.showModal();
+    }
     
     // Setup slug help functionality
-    setupSlugHelp();
+    if (typeof setupSlugHelp === 'function') {
+      setupSlugHelp();
+    }
   } catch (error) {
     console.error("Error showing login modal:", error);
     createFallbackLoginModal();
@@ -5478,31 +5624,57 @@ function handleRegister() {
 // Global reset function
 window.resetApp = function() {
   if (confirm("Weet je zeker dat je de app wilt resetten? Dit verwijdert alle lokale data en herstart de applicatie.")) {
-    // Clear all PlanWise related data
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('planwise_')) {
-        keysToRemove.push(key);
+    try {
+      // Clear all PlanWise related data
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('planwise_')) {
+          keysToRemove.push(key);
+        }
       }
+      
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      sessionStorage.clear();
+      
+      // Reset global variables
+      if (typeof currentAuth !== 'undefined') currentAuth = null;
+      if (typeof currentRoute !== 'undefined') currentRoute = "dashboard";
+      if (typeof state !== 'undefined') state = null;
+      
+      // Close any open modals
+      document.querySelectorAll('dialog[open]').forEach(d => { 
+        try { d.close(); } catch(_){} 
+      });
+      
+      // Remove any stray overlays/backdrops
+      const blockers = document.querySelectorAll('.modal-backdrop,.overlay,.fc-popover,.error-toast'); 
+      blockers.forEach(b => b.remove());
+      
+      // Reset UI state
+      const appElement = document.getElementById('app');
+      const loginScreenElement = document.getElementById('loginScreen');
+      
+      if (appElement) appElement.style.display = 'none';
+      if (loginScreenElement) loginScreenElement.style.display = 'flex';
+      
+      // Show login modal after reset
+      setTimeout(() => {
+        if (typeof showLoginModal === 'function') {
+          showLoginModal();
+        } else {
+          // Fallback: reload the page
+          location.reload();
+        }
+      }, 100);
+      
+      console.log('App reset completed successfully');
+      
+    } catch (error) {
+      console.error('Error during app reset:', error);
+      // Fallback: reload the page
+      location.reload();
     }
-    
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-    sessionStorage.clear();
-    
-    // Close any open modals
-    document.querySelectorAll('dialog[open]').forEach(d => { 
-      try { d.close(); } catch(_){} 
-    });
-    
-    // Remove any stray overlays/backdrops
-    const blockers = document.querySelectorAll('.modal-backdrop,.overlay,.fc-popover'); 
-    blockers.forEach(b => b.remove());
-    
-    // Show login modal after reset
-    setTimeout(() => {
-      showLoginModal();
-    }, 100);
   }
 }
 
