@@ -928,7 +928,10 @@ class PlanWiseScheduler {
 }
 
 // Export singleton instance
-window.planwiseScheduler = new PlanWiseScheduler();
+window.PlanWiseScheduler = new PlanWiseScheduler();
+
+// Backwards compatibility aliases
+window.planwiseScheduler = window.PlanWiseScheduler;
 
 // Enhanced debug helpers
 window.schedulerDebug = {
@@ -956,13 +959,13 @@ window.schedulerDebug = {
       }
     ];
     
-    return window.planwiseScheduler.optimizeSchedule(testJobs, testTechs);
+    return window.PlanWiseScheduler.optimizeSchedule(testJobs, testTechs);
   },
   
-  getTravelMatrix: () => window.planwiseScheduler.travelMatrix,
+  getTravelMatrix: () => window.PlanWiseScheduler.travelMatrix,
   
   clearCache: () => {
-    window.planwiseScheduler.travelMatrix.clear();
+    window.PlanWiseScheduler.travelMatrix.clear();
   },
   
   testLockRespect: () => {
@@ -996,6 +999,6 @@ window.schedulerDebug = {
       }
     ];
     
-    return window.planwiseScheduler.optimizeSchedule(testJobs, testTechs, {}, lockedEvents);
+    return window.PlanWiseScheduler.optimizeSchedule(testJobs, testTechs, {}, lockedEvents);
   }
 };

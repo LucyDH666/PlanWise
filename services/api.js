@@ -352,12 +352,15 @@ class PlanWiseAPI {
 }
 
 // Export singleton instance
-window.planwiseAPI = new PlanWiseAPI();
+window.PlanWiseAPI = new PlanWiseAPI();
+
+// Backwards compatibility aliases
+window.planwiseAPI = window.PlanWiseAPI;
 
 // Debug helpers
 window.apiDebug = {
-  enableRemote: () => window.planwiseAPI.setRemote(true),
-  disableRemote: () => window.planwiseAPI.setRemote(false),
+  enableRemote: () => window.PlanWiseAPI.setRemote(true),
+  disableRemote: () => window.PlanWiseAPI.setRemote(false),
   getLogs: () => JSON.parse(localStorage.getItem('planwise_logs') || '[]'),
   clearLogs: () => localStorage.removeItem('planwise_logs')
 };

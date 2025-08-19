@@ -135,8 +135,8 @@
     const services = {
       auth: typeof Auth !== 'undefined',
       data: typeof window.PlanWiseData !== 'undefined',
-      api: typeof window.PlanWiseAPI !== 'undefined',
-      scheduler: typeof window.PlanWiseScheduler !== 'undefined'
+      api: typeof window.PlanWiseAPI !== 'undefined' || typeof window.planwiseAPI !== 'undefined',
+      scheduler: typeof window.PlanWiseScheduler !== 'undefined' || typeof window.planwiseScheduler !== 'undefined'
     };
     
     console.log('Service availability:', services);
