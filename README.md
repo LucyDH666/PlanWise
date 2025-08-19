@@ -1,261 +1,247 @@
-# PlanWise - AI Planner MVP
+# PlanWise Lite
 
-Een geavanceerd AI-gestuurd planningssysteem voor installateurs en vastgoedbeheer. PlanWise optimaliseert automatisch werkorders op basis van skills, locatie, beschikbaarheid en prioriteit.
+Een moderne, client-only AI Planner applicatie voor installateurs en vastgoedbeheer. PlanWise Lite is volledig gebouwd voor GitHub Pages deployment zonder externe API's of bundlers.
 
 ## 🚀 Features
 
-### Core Functionaliteit
-- **AI Planning Engine** - Geavanceerde optimalisatie met heuristische algoritmes
-- **Multi-tenant Support** - Isolatie per organisatie met localStorage simulatie
-- **Real-time Dashboard** - FullCalendar integratie met fallback
-- **Kanban Planner** - Visuele workflow management
-- **Installatie Management** - Asset tracking en onderhoudsplanning
-- **PWA Support** - Offline functionaliteit en mobile-first design
+### 🔐 Authenticatie & Beveiliging
+- **Lokale authenticatie** - Geen externe servers nodig
+- **Role-based access control** - Super Admin, Admin, Planner, Technicus, Viewer
+- **Wachtwoord hashing** - Veilige opslag van gebruikersgegevens
+- **Session management** - Automatische login herstel
 
-### Technische Features
-- **API Adapter** - Backend-ready met feature flags
-- **Scheduler Service** - Uitgebreide optimalisatie met explainability
-- **Service Worker** - Offline caching en background sync
-- **Responsive Design** - Glassmorphism UI met moderne styling
-- **Multi-role Support** - RBAC simulatie (Admin, Planner, Monteur, Viewer)
+### 🏢 Organisatie Management
+- **Multi-tenant architectuur** - Elke organisatie heeft eigen data
+- **Organisatie CRUD** - Volledig beheer van organisaties (Super Admin)
+- **Gebruikersbeheer** - Toevoegen, bewerken, verwijderen van gebruikers
+- **Slug-based routing** - Unieke URLs per organisatie
 
-## 📋 Quick Start
+### 📅 Planner & Planning
+- **FullCalendar integratie** - Moderne kalender interface
+- **Job management** - Volledig CRUD voor opdrachten
+- **Drag & drop planning** - Visuele planning van opdrachten
+- **Status tracking** - Nieuw → Gepland → In uitvoering → Voltooid
+- **Categorieën** - CV-onderhoud, Loodgieter, Elektra, Airco/Koeling, Algemeen
 
-### 1. Setup
+### 🎨 Moderne UI/UX
+- **Glassmorphism design** - Moderne, transparante interface
+- **Responsive design** - Werkt op alle apparaten
+- **Dark theme** - Oogvriendelijke donkere modus
+- **Toast notifications** - Real-time feedback
+- **Loading states** - Duidelijke laadindicatoren
+
+### 🔧 Technische Features
+- **Hash-based routing** - Geen server-side routing nodig
+- **localStorage state management** - Persistente data opslag
+- **Error handling** - Robuuste foutafhandeling
+- **Log viewer** - Debug en monitoring tools
+- **Offline-first** - Werkt zonder internetverbinding
+
+## 📁 Project Structuur
+
+```
+PlanWise/
+├── index.html              # Hoofdbestand met UI structuur
+├── css/
+│   └── style.css          # Moderne CSS met glassmorphism
+├── js/
+│   ├── data.js            # Data service (localStorage)
+│   ├── auth.js            # Authenticatie service
+│   ├── ui.js              # UI interacties en modals
+│   ├── router.js          # Hash-based routing
+│   ├── logs.js            # Error logging en debugging
+│   └── app.js             # Hoofdapplicatie
+└── README.md              # Deze documentatie
+```
+
+## 🚀 Deployment op GitHub Pages
+
+### Stap 1: Repository Setup
 ```bash
-# Clone repository
-git clone <repository-url>
-cd PlanWise
+# Clone de repository
+git clone https://github.com/yourusername/planwise-lite.git
+cd planwise-lite
 
-# Start lokale server (Python 3)
+# Voeg alle bestanden toe
+git add .
+
+# Commit de wijzigingen
+git commit -m "Initial PlanWise Lite release"
+
+# Push naar GitHub
+git push origin main
+```
+
+### Stap 2: GitHub Pages Activeren
+1. Ga naar je GitHub repository
+2. Klik op **Settings** tab
+3. Scroll naar **Pages** sectie
+4. Onder **Source**, selecteer **Deploy from a branch**
+5. Kies **main** branch en **/(root)** folder
+6. Klik **Save**
+
+### Stap 3: Toegang tot de App
+- Je app is nu beschikbaar op: `https://yourusername.github.io/planwise-lite`
+- De eerste keer laden kan 1-2 minuten duren
+
+## 🔑 Eerste Gebruik
+
+### 1. Super Admin Seed
+1. Open de applicatie
+2. Klik op **🔧 Super Admin Seed**
+3. Gebruik de credentials:
+   - **Organisatie:** `superadmin`
+   - **Gebruikersnaam:** `superadmin`
+   - **Wachtwoord:** `admin123`
+
+### 2. Nieuwe Organisatie Aanmaken
+1. Log in als Super Admin
+2. Ga naar **Organisaties**
+3. Klik **+ Nieuwe Organisatie**
+4. Vul in:
+   - **Slug:** `mijn-bedrijf` (alleen kleine letters, cijfers, streepjes)
+   - **Naam:** `Mijn Bedrijf BV`
+   - **Plan:** `free`
+
+### 3. Gebruiker Aanmaken
+1. Ga naar **Gebruikers**
+2. Klik **+ Nieuwe Gebruiker**
+3. Vul in:
+   - **Organisatie:** `mijn-bedrijf`
+   - **Gebruikersnaam:** `admin`
+   - **E-mail:** `admin@mijnbedrijf.nl`
+   - **Wachtwoord:** `wachtwoord123`
+   - **Rol:** `admin`
+
+### 4. Inloggen bij Nieuwe Organisatie
+1. Log uit
+2. Log in met:
+   - **Organisatie:** `mijn-bedrijf`
+   - **Gebruikersnaam:** `admin`
+   - **Wachtwoord:** `wachtwoord123`
+
+## 🎯 Acceptatie Criteria
+
+### ✅ Hard Refresh → Login binnen 1s
+- [x] Applicatie laadt snel
+- [x] Login scherm verschijnt direct
+- [x] Geen externe dependencies die vertragen
+
+### ✅ Super Admin Login
+- [x] Super Admin seed werkt
+- [x] Super Admin interface zichtbaar
+- [x] Alle Super Admin features beschikbaar
+
+### ✅ Nieuwe Organisatie + User → Uitloggen → Inloggen
+- [x] Organisatie aanmaken werkt
+- [x] Gebruiker aanmaken werkt
+- [x] Uitloggen werkt
+- [x] Inloggen bij nieuwe organisatie werkt
+
+### ✅ Reset App → Login Terug
+- [x] Reset App knop werkt
+- [x] Alle data wordt gewist
+- [x] Terug naar login scherm
+
+## 🔧 Technische Details
+
+### State Management
+- **localStorage keys:**
+  - `planwise_auth_v1` - Authenticatie data
+  - `planwise_users_v1` - Gebruikers data
+  - `planwise_<slug>_v1` - Organisatie-specifieke data
+
+### Permissions
+- **Super Admin:** Alle rechten
+- **Admin:** Dashboard, Planner (edit), Settings, Users
+- **Planner:** Dashboard, Planner (edit), Settings (view)
+- **Technicus:** Dashboard, Planner (view), Settings (view)
+- **Viewer:** Dashboard, Planner (view)
+
+### Error Handling
+- **Global error handlers** voor JavaScript errors
+- **Promise rejection handling**
+- **Toast notifications** voor user feedback
+- **Log viewer** voor debugging (Ctrl+Shift+L)
+
+### Browser Support
+- **Modern browsers** (Chrome, Firefox, Safari, Edge)
+- **ES6+ features** gebruikt
+- **localStorage** voor data persistence
+- **CSS Grid & Flexbox** voor layout
+
+## 🛠️ Development
+
+### Lokale Ontwikkeling
+```bash
+# Start een lokale server (Python 3)
 python -m http.server 8000
 
 # Of met Node.js
 npx serve .
 
-# Of met PHP
-php -S localhost:8000
+# Open in browser
+open http://localhost:8000
 ```
 
-### 2. Toegang
-Open `http://localhost:8000` in je browser
+### Debugging
+- **Log viewer:** Druk `Ctrl+Shift+L` om logs te bekijken
+- **Console:** Alle logs worden ook naar console geschreven
+- **localStorage:** Bekijk browser dev tools voor data inspectie
 
-### 3. Demo Login
-- **Super Admin**: `superadmin` / `planwise2025!`
-- **Demo Tenant**: Automatisch aangemaakt bij eerste bezoek
+### Customization
+- **CSS variables** in `css/style.css` voor theming
+- **Permissions** in `js/auth.js` voor role management
+- **Categories** in `js/data.js` voor job types
 
-## 🏗️ Architectuur
+## 📊 Data Export/Import
 
-### Frontend Stack
-- **Vanilla JavaScript** - Geen frameworks, maximale performance
-- **HTML5/CSS3** - Moderne web standards
-- **FullCalendar** - Kalender integratie (CDN)
-- **PWA** - Service Worker + Manifest
-
-### State Management
-- **localStorage** - Per-tenant isolatie
-- **API Adapter** - Backend-ready interface
-- **Multi-tenant** - Organisatie-scoped data
-
-### Services
-- **API Service** (`services/api.js`) - Backend communicatie
-- **Scheduler Service** (`services/scheduler.js`) - AI optimalisatie
-- **Service Worker** (`service-worker.js`) - Offline support
-
-## 🔧 Configuratie
-
-### Environment Variables
-```bash
-# API Configuration (voor backend integratie)
-PLANWISE_API_URL=https://api.planwise.com/v1
-PLANWISE_API_KEY=your-api-key
-
-# External Services
-GOOGLE_MAPS_API_KEY=your-google-maps-key
-OPENAI_API_KEY=your-openai-key
-
-# Feature Flags
-ENABLE_REMOTE_API=false
-ENABLE_OR_TOOLS=false
-```
-
-### Settings Panel
-Configureer in de app:
-- **Monteurs** - Skills, beschikbaarheid, standplaats
-- **Integraties** - Webhooks, API keys, kalender sync
-- **Platform Settings** - Multi-tenant configuratie
-
-## 📊 Scheduler Engine
-
-### Optimalisatie Algoritme
-1. **Priority Scoring** - SLA deadlines, categorie prioriteit
-2. **Skill Matching** - Technicus-klant matching
-3. **Travel Matrix** - Reisafstand optimalisatie
-4. **Time Windows** - Beschikbaarheid en voorkeuren
-5. **Constraint Checking** - Werkuren, max jobs per dag
-
-### Explainability
-De scheduler geeft uitleg bij elke voorstel:
-- Waarom deze technicus?
-- Hoe is de score berekend?
-- Welke constraints zijn toegepast?
-
-## 🔐 Beveiliging & GDPR
-
-### Multi-tenant Isolatie
-- Per-organisatie data isolatie
-- Row-level security simulatie
-- Tenant-scoped API calls
-
-### GDPR Compliance
-- Data minimalisatie
-- Export/delete functionaliteit
-- Audit logging
-- PII bescherming
-
-### RBAC (Role-Based Access Control)
-- **Admin** - Volledige toegang
-- **Planner** - Planning en beheer
-- **Monteur** - Werkorders en status
-- **Viewer** - Alleen bekijken
-
-## 📱 PWA Features
-
-### Offline Functionaliteit
-- Service Worker caching
-- Background sync
-- Offline werkbonnen
-- Push notifications
-
-### Mobile Optimized
-- Responsive design
-- Touch-friendly interface
-- Installable app
-- Native-like experience
-
-## 🚀 Deployment
-
-### Static Hosting
-```bash
-# Build voor productie
-# (Geen build stap nodig - vanilla JS)
-
-# Deploy naar Netlify/Vercel
-netlify deploy --prod
-
-# Of upload naar web server
-```
-
-### Backend Integratie
-1. Zet `ENABLE_REMOTE_API=true`
-2. Configureer `PLANWISE_API_URL`
-3. Implementeer backend endpoints
-4. Test API communicatie
-
-### Environment Setup
-```bash
-# Production environment
-cp .env.example .env
-# Vul API keys en endpoints in
-```
-
-## 🧪 Testing
-
-### Manual Testing
+### Export Data
 ```javascript
-// Debug helpers in browser console
-window.testDashboard()           // Test dashboard functionaliteit
-window.schedulerDebug.testOptimization()  // Test scheduler
-window.apiDebug.enableRemote()   // Schakel remote API in
+// Export organisatie data
+const data = window.dataService.exportData('mijn-bedrijf');
+window.uiService.downloadJSON(data, 'planwise-export.json');
 ```
 
-### Automated Testing
-```bash
-# E2E tests (toekomstig)
-npm run test:e2e
-
-# Unit tests (toekomstig)
-npm run test:unit
+### Import Data
+```javascript
+// Import organisatie data
+const importedData = JSON.parse(jsonString);
+window.dataService.importData('nieuwe-organisatie', importedData);
 ```
 
-## 📈 Monitoring & Observability
+## 🔒 Security Considerations
 
-### Logging
-- Structured logging via API service
-- Console logging voor debugging
-- localStorage log storage
+### Lokale Opslag
+- **localStorage** is niet versleuteld
+- **Wachtwoorden** worden gehashed (maar niet met bcrypt)
+- **Geen HTTPS** vereist voor lokale ontwikkeling
 
-### Metrics
-- Scheduler performance
-- API response times
-- User interactions
-- Error tracking
+### Productie Gebruik
+- **HTTPS** aanbevolen voor productie
+- **Sterkere hashing** implementeren
+- **Data backup** strategie ontwikkelen
 
-### Health Checks
-- Service Worker status
-- API connectivity
-- Cache status
-- Database health
+## 🤝 Bijdragen
 
-## 🔄 Roadmap
+1. Fork de repository
+2. Maak een feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit je wijzigingen (`git commit -m 'Add amazing feature'`)
+4. Push naar de branch (`git push origin feature/amazing-feature`)
+5. Open een Pull Request
 
-### v1.1 (Q1 2025)
-- [ ] OR-Tools integratie
-- [ ] Real-time kalender sync
-- [ ] Advanced RBAC
-- [ ] Mobile app
+## 📄 Licentie
 
-### v1.2 (Q2 2025)
-- [ ] Machine Learning optimalisatie
-- [ ] Predictive maintenance
-- [ ] Customer portal
-- [ ] Advanced analytics
-
-### v2.0 (Q3 2025)
-- [ ] Microservices architecture
-- [ ] Real-time collaboration
-- [ ] Advanced reporting
-- [ ] API marketplace
-
-## 🤝 Contributing
-
-### Development Setup
-1. Fork repository
-2. Maak feature branch
-3. Implementeer changes
-4. Test thoroughly
-5. Submit pull request
-
-### Code Standards
-- ES6+ JavaScript
-- Consistent naming
-- Error handling
-- Performance optimization
-- Accessibility compliance
-
-## 📄 License
-
-MIT License - zie LICENSE bestand voor details.
+Dit project is gelicenseerd onder de MIT License - zie het [LICENSE](LICENSE) bestand voor details.
 
 ## 🆘 Support
 
-### Troubleshooting
-1. Check browser console voor errors
-2. Verifieer localStorage data
-3. Test service worker status
-4. Controleer API connectivity
-
-### Common Issues
-- **FullCalendar niet geladen**: Check CDN connectivity
-- **Scheduler errors**: Controleer console logs
-- **PWA niet werkend**: Verifieer HTTPS/Service Worker
-- **Data loss**: Check localStorage quota
-
-### Contact
-- **Issues**: GitHub Issues
-- **Documentation**: Wiki
-- **Support**: support@planwise.com
+Voor vragen of problemen:
+1. Bekijk de logs met `Ctrl+Shift+L`
+2. Check de browser console voor errors
+3. Open een issue op GitHub
+4. Neem contact op via de repository
 
 ---
 
-**PlanWise** - Slimme planning voor slimme bedrijven 🤖📅
+**PlanWise Lite** - Moderne planning voor installateurs & vastgoedbeheer 🚀
