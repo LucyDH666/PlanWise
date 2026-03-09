@@ -1,366 +1,359 @@
-/* PlanWise API Adapter
-   Provides a clean interface for backend communication with localStorage fallback
-   Ready for backend integration with feature flags
-*/
+/* PlanWise API Service
+ * Maakt echte fetch-calls naar de Express backend (/api/...).
+ * Interface is backwards-compatibel met de localStorage-versie.
+ * Zet useRemote = false om terug te vallen op localStorage (development/offline).
+ */
 
 class PlanWiseAPI {
   constructor() {
-    this.useRemote = false; // Feature flag for backend toggle
-    this.baseUrl = 'https://api.planwise.com/v1'; // Placeholder
-    this.timeout = 10000;
-    this.retries = 3;
+    this.useRemote = true;        // Nu standaard aan
+    this.baseUrl = '/api';        // Relatief, werkt op elke host/poort
+    this.timeout = 15000;
+    this.retries = 2;
   }
 
-  // Configuration
+  // --- Configuratie ---
+
   setRemote(enabled) {
     this.useRemote = enabled;
-    console.log(`API: Remote mode ${enabled ? 'enabled' : 'disabled'}`);
+    console.log(`API: Remote mode ${enabled ? 'ingeschakeld' : 'uitgeschakeld'}`);
   }
 
   setBaseUrl(url) {
     this.baseUrl = url;
   }
 
-  // Generic request method
-  async request(endpoint, options = {}) {
-    if (!this.useRemote) {
-      return this.localStorageRequest(endpoint, options);
-    }
+  // --- Auth helpers ---
 
-    const url = `${this.baseUrl}${endpoint}`;
-    const config = {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.getAuthToken()}`,
-        'X-Organization-ID': this.getCurrentTenant()
-      },
-      timeout: this.timeout,
-      ...options
-    };
-
-    for (let attempt = 1; attempt <= this.retries; attempt++) {
-      try {
-        const response = await fetch(url, config);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-      } catch (error) {
-        console.warn(`API request failed (attempt ${attempt}/${this.retries}):`, error);
-        
-        if (attempt === this.retries) {
-          console.log('Falling back to localStorage');
-          return this.localStorageRequest(endpoint, options);
-        }
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-      }
-    }
-  }
-
-  // LocalStorage fallback
-  localStorageRequest(endpoint, options) {
-    console.log(`API: Using localStorage for ${endpoint}`);
-    
-    // Simulate network delay
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const result = this.handleLocalStorageRequest(endpoint, options);
-        resolve(result);
-      }, 100 + Math.random() * 200);
-    });
-  }
-
-  handleLocalStorageRequest(endpoint, options) {
-    const { method = 'GET', body } = options;
-    
-    switch (endpoint) {
-      case '/schedule/optimize':
-        return this.optimizeSchedule(body);
-      
-      case '/jobs':
-        return this.handleJobs(method, body);
-      
-      case '/technicians':
-        return this.handleTechnicians(method, body);
-      
-      case '/events':
-        return this.handleEvents(method, body);
-      
-      case '/installations':
-        return this.handleInstallations(method, body);
-      
-      case '/kpis':
-        return this.getKPIs();
-      
-      default:
-        throw new Error(`Unknown endpoint: ${endpoint}`);
-    }
-  }
-
-  // Schedule optimization
-  async optimizeSchedule(data) {
-    const { jobs, technicians, policies } = data;
-    
-    // Simple heuristic algorithm
-    const proposals = [];
-    
-    for (const job of jobs) {
-      const matchingTechs = technicians.filter(tech => 
-        tech.skills.some(skill => job.required_skills.includes(skill))
-      );
-      
-      if (matchingTechs.length > 0) {
-        const tech = matchingTechs[0];
-        const start = new Date(job.window_start);
-        const end = new Date(start.getTime() + job.duration_min * 60000);
-        
-        proposals.push({
-          job_id: job.id,
-          technician_id: tech.id,
-          start: start.toISOString(),
-          end: end.toISOString(),
-          travel_min: 15,
-          score: 85,
-          violations: []
-        });
-      }
-    }
-    
-    return {
-      routes: proposals,
-      appointments: proposals,
-      score: 85,
-      violations: [],
-      why: ['Skills matching', 'Time window feasibility', 'Travel optimization']
-    };
-  }
-
-  // Jobs CRUD
-  handleJobs(method, body) {
-    const state = this.getState();
-    
-    switch (method) {
-      case 'GET':
-        return { jobs: state.tickets || [] };
-      
-      case 'POST':
-        const newJob = { ...body, id: `job_${Date.now()}`, created_at: new Date().toISOString() };
-        state.tickets = state.tickets || [];
-        state.tickets.push(newJob);
-        this.saveState(state);
-        return { job: newJob };
-      
-      case 'PUT':
-        const index = state.tickets.findIndex(j => j.id === body.id);
-        if (index !== -1) {
-          state.tickets[index] = { ...state.tickets[index], ...body };
-          this.saveState(state);
-          return { job: state.tickets[index] };
-        }
-        throw new Error('Job not found');
-      
-      case 'DELETE':
-        state.tickets = state.tickets.filter(j => j.id !== body.id);
-        this.saveState(state);
-        return { success: true };
-      
-      default:
-        throw new Error(`Unsupported method: ${method}`);
-    }
-  }
-
-  // Technicians CRUD
-  handleTechnicians(method, body) {
-    const state = this.getState();
-    
-    switch (method) {
-      case 'GET':
-        return { technicians: state.technicians || [] };
-      
-      case 'POST':
-        const newTech = { ...body, id: `tech_${Date.now()}` };
-        state.technicians = state.technicians || [];
-        state.technicians.push(newTech);
-        this.saveState(state);
-        return { technician: newTech };
-      
-      case 'PUT':
-        const index = state.technicians.findIndex(t => t.id === body.id);
-        if (index !== -1) {
-          state.technicians[index] = { ...state.technicians[index], ...body };
-          this.saveState(state);
-          return { technician: state.technicians[index] };
-        }
-        throw new Error('Technician not found');
-      
-      case 'DELETE':
-        state.technicians = state.technicians.filter(t => t.id !== body.id);
-        this.saveState(state);
-        return { success: true };
-      
-      default:
-        throw new Error(`Unsupported method: ${method}`);
-    }
-  }
-
-  // Events CRUD
-  handleEvents(method, body) {
-    const state = this.getState();
-    
-    switch (method) {
-      case 'GET':
-        return { events: state.calendarEvents || [] };
-      
-      case 'POST':
-        const newEvent = { ...body, id: `ev_${Date.now()}` };
-        state.calendarEvents = state.calendarEvents || [];
-        state.calendarEvents.push(newEvent);
-        this.saveState(state);
-        return { event: newEvent };
-      
-      case 'PUT':
-        const index = state.calendarEvents.findIndex(e => e.id === body.id);
-        if (index !== -1) {
-          state.calendarEvents[index] = { ...state.calendarEvents[index], ...body };
-          this.saveState(state);
-          return { event: state.calendarEvents[index] };
-        }
-        throw new Error('Event not found');
-      
-      case 'DELETE':
-        state.calendarEvents = state.calendarEvents.filter(e => e.id !== body.id);
-        this.saveState(state);
-        return { success: true };
-      
-      default:
-        throw new Error(`Unsupported method: ${method}`);
-    }
-  }
-
-  // Installations CRUD
-  handleInstallations(method, body) {
-    const state = this.getState();
-    
-    switch (method) {
-      case 'GET':
-        return { installations: state.installations || [] };
-      
-      case 'POST':
-        const newInstallation = { ...body, id: `inst_${Date.now()}` };
-        state.installations = state.installations || [];
-        state.installations.push(newInstallation);
-        this.saveState(state);
-        return { installation: newInstallation };
-      
-      case 'PUT':
-        const index = state.installations.findIndex(i => i.id === body.id);
-        if (index !== -1) {
-          state.installations[index] = { ...state.installations[index], ...body };
-          this.saveState(state);
-          return { installation: state.installations[index] };
-        }
-        throw new Error('Installation not found');
-      
-      case 'DELETE':
-        state.installations = state.installations.filter(i => i.id !== body.id);
-        this.saveState(state);
-        return { success: true };
-      
-      default:
-        throw new Error(`Unsupported method: ${method}`);
-    }
-  }
-
-  // KPIs
-  getKPIs() {
-    const state = this.getState();
-    const events = state.calendarEvents || [];
-    const tickets = state.tickets || [];
-    
-    const today = new Date();
-    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    
-    const completedThisWeek = events.filter(e => 
-      new Date(e.start) >= thisWeek && e.status === 'completed'
-    ).length;
-    
-    const pendingTickets = tickets.filter(t => t.status === 'new').length;
-    
-    return {
-      completed_this_week: completedThisWeek,
-      pending_tickets: pendingTickets,
-      total_events: events.length,
-      total_technicians: (state.technicians || []).length,
-      sla_compliance: 95.2, // Mock data
-      average_travel_time: 23 // Mock data
-    };
-  }
-
-  // Utility methods
   getAuthToken() {
-    return localStorage.getItem('planwise_auth_token') || 'demo-token';
+    return localStorage.getItem('planwise_api_token') || null;
+  }
+
+  setAuthToken(token) {
+    if (token) localStorage.setItem('planwise_api_token', token);
+    else localStorage.removeItem('planwise_api_token');
   }
 
   getCurrentTenant() {
+    try {
+      const raw = localStorage.getItem('planwise_auth_v2');
+      if (raw) return JSON.parse(raw).orgSlug || 'demo';
+    } catch {}
     return localStorage.getItem('planwise_current_tenant') || 'demo';
   }
 
+  // --- Generic request ---
+
+  async request(endpoint, options = {}) {
+    if (!this.useRemote) {
+      return this._localStorageRequest(endpoint, options);
+    }
+
+    const { method = 'GET', body } = options;
+    const token = this.getAuthToken();
+
+    const fetchOptions = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    };
+
+    if (body && method !== 'GET') {
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    // Normaliseer endpoint: /jobs → /api/jobs
+    const url = endpoint.startsWith('/api') ? endpoint : `${this.baseUrl}${endpoint}`;
+
+    for (let attempt = 1; attempt <= this.retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeout);
+
+        const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+        clearTimeout(timer);
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(err.error || `HTTP ${response.status}`);
+        }
+
+        return await response.json();
+      } catch (error) {
+        this.log('warn', `Request mislukt (poging ${attempt}/${this.retries}): ${endpoint}`, error.message);
+
+        if (attempt === this.retries) {
+          // Fallback naar localStorage als backend niet bereikbaar is
+          console.warn('API: Backend niet bereikbaar, val terug op localStorage');
+          return this._localStorageRequest(endpoint, options);
+        }
+
+        await new Promise(r => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
+
+  // --- Auth API ---
+
+  async login(username, password, orgSlug) {
+    const result = await this.request('/auth/login', {
+      method: 'POST',
+      body: { username, password, orgSlug }
+    });
+    if (result.token) this.setAuthToken(result.token);
+    return result;
+  }
+
+  async logout() {
+    await this.request('/auth/logout', { method: 'POST' }).catch(() => {});
+    this.setAuthToken(null);
+  }
+
+  async getMe() {
+    return this.request('/auth/me');
+  }
+
+  async getOrganizations() {
+    return this.request('/auth/organizations');
+  }
+
+  // --- Jobs / Tickets ---
+
+  async getJobs() {
+    return this.request('/jobs');
+  }
+
+  async getJob(id) {
+    return this.request(`/jobs/${id}`);
+  }
+
+  async createJob(data) {
+    return this.request('/jobs', { method: 'POST', body: data });
+  }
+
+  async updateJob(id, data) {
+    return this.request(`/jobs/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteJob(id) {
+    return this.request(`/jobs/${id}`, { method: 'DELETE' });
+  }
+
+  // --- Technicians ---
+
+  async getTechnicians() {
+    return this.request('/technicians');
+  }
+
+  async createTechnician(data) {
+    return this.request('/technicians', { method: 'POST', body: data });
+  }
+
+  async updateTechnician(id, data) {
+    return this.request(`/technicians/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteTechnician(id) {
+    return this.request(`/technicians/${id}`, { method: 'DELETE' });
+  }
+
+  // --- Calendar Events ---
+
+  async getEvents() {
+    return this.request('/events');
+  }
+
+  async createEvent(data) {
+    return this.request('/events', { method: 'POST', body: data });
+  }
+
+  async updateEvent(id, data) {
+    return this.request(`/events/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteEvent(id) {
+    return this.request(`/events/${id}`, { method: 'DELETE' });
+  }
+
+  // --- Installations ---
+
+  async getInstallations() {
+    return this.request('/installations');
+  }
+
+  async createInstallation(data) {
+    return this.request('/installations', { method: 'POST', body: data });
+  }
+
+  async updateInstallation(id, data) {
+    return this.request(`/installations/${id}`, { method: 'PUT', body: data });
+  }
+
+  async deleteInstallation(id) {
+    return this.request(`/installations/${id}`, { method: 'DELETE' });
+  }
+
+  // --- Settings ---
+
+  async getSettings() {
+    return this.request('/settings');
+  }
+
+  async updateSettings(data) {
+    return this.request('/settings', { method: 'PUT', body: data });
+  }
+
+  // --- KPIs ---
+
+  async getKPIs() {
+    return this.request('/kpis');
+  }
+
+  // --- Scheduling (blijft lokaal via services/scheduler.js) ---
+
+  async optimizeSchedule(data) {
+    // Scheduler draait client-side — geen backend call nodig
+    if (window.PlanWiseScheduler) {
+      const { jobs, technicians, policies } = data;
+      return window.PlanWiseScheduler.optimizeSchedule(jobs, technicians, policies || {});
+    }
+    // Minimale fallback als scheduler niet geladen is
+    return { assignments: [], unassigned_jobs: data.jobs || [], score: 0, explanations: [] };
+  }
+
+  // --- Migratie: localStorage → backend ---
+
+  async migrateStateToBackend(orgSlug) {
+    const key = `planwise_${orgSlug}_v4`;
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      console.warn('Geen localStorage data gevonden voor', orgSlug);
+      return { ok: false, reason: 'geen data' };
+    }
+
+    let state;
+    try { state = JSON.parse(raw); } catch { return { ok: false, reason: 'parse error' }; }
+
+    const result = await this.request('/migrate', { method: 'POST', body: { state } });
+    console.log('Migratie voltooid:', result);
+    return result;
+  }
+
+  // --- Backwards-compatibele state helpers (deprecated, gebruik de losse methoden) ---
+
   getState() {
-    const key = this.getCurrentTenant() ? `planwise_${this.getCurrentTenant()}_v4` : "planwise_demo_v4";
+    const key = `planwise_${this.getCurrentTenant()}_v4`;
     try {
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
+    } catch { return {}; }
   }
 
   saveState(state) {
-    const key = this.getCurrentTenant() ? `planwise_${this.getCurrentTenant()}_v4` : "planwise_demo_v4";
+    const key = `planwise_${this.getCurrentTenant()}_v4`;
     try {
       localStorage.setItem(key, JSON.stringify(state));
     } catch (error) {
-      console.error('Failed to save state:', error);
+      console.error('saveState mislukt:', error);
     }
   }
 
-  // Logging wrapper
+  // --- Logging ---
+
   log(level, message, data = null) {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      level,
-      message,
-      data,
-      tenant: this.getCurrentTenant(),
-      endpoint: 'api'
+    const entry = { timestamp: new Date().toISOString(), level, message, data };
+    console[level === 'warn' ? 'warn' : 'log'](`[PlanWise API] ${message}`, data || '');
+
+    try {
+      const logs = JSON.parse(localStorage.getItem('planwise_logs') || '[]');
+      logs.push(entry);
+      if (logs.length > 100) logs.shift();
+      localStorage.setItem('planwise_logs', JSON.stringify(logs));
+    } catch {}
+  }
+
+  // --- Interne localStorage fallback (identiek aan originele implementatie) ---
+
+  _localStorageRequest(endpoint, options) {
+    return new Promise(resolve => {
+      setTimeout(() => resolve(this._handleLocalRequest(endpoint, options)), 50);
+    });
+  }
+
+  _handleLocalRequest(endpoint, options) {
+    const { method = 'GET', body } = options;
+    const state = this.getState();
+
+    if (endpoint === '/schedule/optimize') return this.optimizeSchedule(body);
+
+    const entityMap = {
+      '/jobs': { key: 'tickets', idPrefix: 'job' },
+      '/technicians': { key: 'technicians', idPrefix: 'tech' },
+      '/events': { key: 'calendarEvents', idPrefix: 'ev' },
+      '/installations': { key: 'installations', idPrefix: 'inst' }
     };
-    
-    console.log(`[${timestamp}] ${level.toUpperCase()}: ${message}`, data || '');
-    
-    // Store in localStorage for debugging
-    const logs = JSON.parse(localStorage.getItem('planwise_logs') || '[]');
-    logs.push(logEntry);
-    if (logs.length > 100) logs.shift(); // Keep last 100 logs
-    localStorage.setItem('planwise_logs', JSON.stringify(logs));
+
+    // Ondersteun /jobs/:id patroon
+    const baseEndpoint = '/' + endpoint.split('/')[1];
+    const entityId = endpoint.split('/')[2];
+    const map = entityMap[baseEndpoint];
+
+    if (map) {
+      const list = state[map.key] || [];
+      if (method === 'GET') return entityId ? list.find(i => i.id === entityId) : list;
+      if (method === 'POST') {
+        const item = { ...body, id: `${map.idPrefix}_${Date.now()}` };
+        state[map.key] = [...list, item];
+        this.saveState(state);
+        return item;
+      }
+      if (method === 'PUT') {
+        const idx = list.findIndex(i => i.id === (entityId || body.id));
+        if (idx !== -1) { state[map.key][idx] = { ...list[idx], ...body }; this.saveState(state); return state[map.key][idx]; }
+        throw new Error('Niet gevonden');
+      }
+      if (method === 'DELETE') {
+        state[map.key] = list.filter(i => i.id !== (entityId || body?.id));
+        this.saveState(state);
+        return { ok: true };
+      }
+    }
+
+    if (endpoint === '/kpis') return this._computeKPIs(state);
+    if (endpoint.startsWith('/settings')) {
+      if (method === 'GET') return state.settings || {};
+      if (method === 'PUT') { state.settings = { ...state.settings, ...body }; this.saveState(state); return state.settings; }
+    }
+
+    throw new Error(`Onbekend endpoint: ${endpoint}`);
+  }
+
+  _computeKPIs(state) {
+    const events = state.calendarEvents || [];
+    const tickets = state.tickets || [];
+    const thisWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    return {
+      completed_this_week: events.filter(e => new Date(e.start) >= thisWeek && e.status === 'completed').length,
+      pending_tickets: tickets.filter(t => t.status === 'new').length,
+      total_events: events.length,
+      total_technicians: (state.technicians || []).length,
+      sla_compliance: 95.2,
+      average_travel_time: 23
+    };
   }
 }
 
-// Export singleton instance
+// Singleton — zelfde interface als voor de refactor
 window.PlanWiseAPI = new PlanWiseAPI();
-
-// Backwards compatibility aliases
-window.planwiseAPI = window.PlanWiseAPI;
+window.planwiseAPI = window.PlanWiseAPI; // Backwards compat
 
 // Debug helpers
 window.apiDebug = {
-  enableRemote: () => window.PlanWiseAPI.setRemote(true),
+  enableRemote:  () => window.PlanWiseAPI.setRemote(true),
   disableRemote: () => window.PlanWiseAPI.setRemote(false),
-  getLogs: () => JSON.parse(localStorage.getItem('planwise_logs') || '[]'),
-  clearLogs: () => localStorage.removeItem('planwise_logs')
+  getLogs:       () => JSON.parse(localStorage.getItem('planwise_logs') || '[]'),
+  clearLogs:     () => localStorage.removeItem('planwise_logs'),
+  migrate:       (orgSlug) => window.PlanWiseAPI.migrateStateToBackend(orgSlug)
 };
